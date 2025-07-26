@@ -15,6 +15,18 @@ class MusicPlayer:
         self.volume = 0.7  # Default volume
         self.music_ended = False
         
+    def load_music_file(self, file_path: str) -> bool:
+        """Load a single music file"""
+        if not file_path or not os.path.exists(file_path):
+            return False
+            
+        supported_formats = {'.mp3', '.wav', '.ogg', '.flac'}
+        if any(file_path.lower().endswith(fmt) for fmt in supported_formats):
+            self.music_files = [file_path]  # Single file in list
+            self.current_index = 0
+            return True
+        return False
+        
     def load_music_directory(self, directory: str) -> bool:
         """Load all music files from the given directory"""
         if not directory or not os.path.exists(directory):
@@ -55,7 +67,11 @@ class MusicPlayer:
                 
     def next_track(self):
         """Play the next track"""
-        self.current_index = (self.current_index + 1) % len(self.music_files)
+        if len(self.music_files) > 1:
+            self.current_index = (self.current_index + 1) % len(self.music_files)
+        else:
+            # For single file, restart from beginning
+            self.current_index = 0
         if self.is_playing:
             self._play_current_track()
             

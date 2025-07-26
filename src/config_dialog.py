@@ -18,7 +18,7 @@ class ConfigDialog(QDialog):
         
         # Set default directories
         self.images_dir = os.path.abspath("./images") if os.path.exists("./images") else ""
-        self.music_dir = os.path.abspath("./music") if os.path.exists("./music") else ""
+        self.music_file = ""  # Changed from music_dir to music_file
         self.image_count = 3
         self.init_ui()
         
@@ -55,26 +55,31 @@ class ConfigDialog(QDialog):
         images_layout.addLayout(path_layout)
         images_group.setLayout(images_layout)
         
-        # Music directory selection
-        music_group = QGroupBox("Music Directory (Optional)")
+        # Music file selection
+        music_group = QGroupBox("Background Music (Optional)")
         music_layout = QVBoxLayout()
         
         # Dropdown for history
         self.music_combo = QComboBox()
         self.music_combo.setEditable(False)
         self.music_combo.addItem("Select from history..." if self.music_history else "No history")
-        self.music_combo.addItems(self.music_history)
-        if self.music_dir:
-            self.music_combo.setCurrentText(self.music_dir)
-        self.music_combo.currentTextChanged.connect(self.on_music_combo_changed)
+        # Show only filenames in dropdown
+        for file_path in self.music_history:
+            self.music_combo.addItem(os.path.basename(file_path), file_path)
+        if self.music_file:
+            # Find and select the current file
+            index = self.music_combo.findData(self.music_file)
+            if index >= 0:
+                self.music_combo.setCurrentIndex(index)
+        self.music_combo.currentIndexChanged.connect(self.on_music_combo_changed)
         
         # Path display and browse button
         music_path_layout = QHBoxLayout()
         self.music_path_edit = QLineEdit()
         self.music_path_edit.setReadOnly(True)
-        self.music_path_edit.setText(self.music_dir)
+        self.music_path_edit.setText(self.music_file)
         self.music_browse_btn = QPushButton("Browse...")
-        self.music_browse_btn.clicked.connect(self.browse_music_dir)
+        self.music_browse_btn.clicked.connect(self.browse_music_file)
         music_path_layout.addWidget(self.music_path_edit)
         music_path_layout.addWidget(self.music_browse_btn)
         
@@ -139,23 +144,29 @@ class ConfigDialog(QDialog):
             self.images_combo.addItems(self.images_history)
             self.images_combo.setCurrentText(dir_path)
             
-    def browse_music_dir(self):
-        dir_path = QFileDialog.getExistingDirectory(
-            self, "Select Music Directory", 
-            os.path.expanduser("~")
+    def browse_music_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Music File", 
+            os.path.expanduser("~"),
+            "Audio Files (*.mp3 *.wav *.ogg *.flac);;All Files (*.*)"
         )
-        if dir_path:
-            self.music_dir = dir_path
-            self.music_path_edit.setText(dir_path)
+        if file_path:
+            self.music_file = file_path
+            self.music_path_edit.setText(file_path)
             
             # Add to history
-            self.music_history = self.add_to_history(dir_path, self.music_history, 'music_history')
+            self.music_history = self.add_to_history(file_path, self.music_history, 'music_history')
             
             # Update combo box
             self.music_combo.clear()
             self.music_combo.addItem("Select from history...")
-            self.music_combo.addItems(self.music_history)
-            self.music_combo.setCurrentText(dir_path)
+            for path in self.music_history:
+                self.music_combo.addItem(os.path.basename(path), path)
+            
+            # Select the new file
+            index = self.music_combo.findData(file_path)
+            if index >= 0:
+                self.music_combo.setCurrentIndex(index)
             
     def on_count_changed(self, text):
         self.image_count = int(text)
@@ -187,7 +198,7 @@ class ConfigDialog(QDialog):
         """Return configuration dictionary"""
         return {
             'images_dir': self.images_dir,
-            'music_dir': self.music_dir,
+            'music_file': self.music_file,  # Changed from music_dir
             'image_count': self.image_count
         }
         
@@ -222,11 +233,13 @@ class ConfigDialog(QDialog):
             self.images_path_edit.setText(text)
             self.validate_start_button()
             
-    def on_music_combo_changed(self, text):
+    def on_music_combo_changed(self, index):
         """Handle music combo selection"""
-        if text and text not in ["Select from history...", "No history"] and os.path.exists(text):
-            self.music_dir = text
-            self.music_path_edit.setText(text)
+        if index > 0:  # Skip "Select from history..." option
+            file_path = self.music_combo.itemData(index)
+            if file_path and os.path.exists(file_path):
+                self.music_file = file_path
+                self.music_path_edit.setText(file_path)
             
     def clear_history(self):
         """Clear all history"""

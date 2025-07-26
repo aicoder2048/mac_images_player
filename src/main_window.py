@@ -1,8 +1,10 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QMenu
+from PyQt6.QtCore import Qt, QTimer, QSettings
 from PyQt6.QtGui import QAction, QKeySequence
 from src.image_viewer import ImageViewer
 from src.music_player import MusicPlayer
+import os
+import json
 
 
 class MainWindow(QMainWindow):
@@ -10,6 +12,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = config
         self.music_player = MusicPlayer()
+        self.settings = QSettings('ImagePlayer', 'Config')
+        self.music_history = self.load_music_history()
         self.init_ui()
         self.setup_music()
         
@@ -49,7 +53,10 @@ class MainWindow(QMainWindow):
         
     def create_menu_bar(self):
         """Create menu bar with controls"""
+        # Clear existing menu bar
         menubar = self.menuBar()
+        menubar.clear()
+        
         menubar.setStyleSheet("""
             QMenuBar {
                 background-color: #2a2a2a;
@@ -84,18 +91,43 @@ class MainWindow(QMainWindow):
         view_menu.addAction(fullscreen_action)
         
         # Music menu
-        if self.config.get('music_dir'):
-            music_menu = menubar.addMenu('Music')
-            
-            play_pause_action = QAction('Play/Pause', self)
-            play_pause_action.setShortcut('Space')
-            play_pause_action.triggered.connect(self.toggle_music)
-            music_menu.addAction(play_pause_action)
-            
-            next_track_action = QAction('Next Track', self)
-            next_track_action.setShortcut('N')
-            next_track_action.triggered.connect(self.music_player.next_track)
-            music_menu.addAction(next_track_action)
+        music_menu = menubar.addMenu('Music')
+        
+        play_pause_action = QAction('Play/Pause', self)
+        play_pause_action.setShortcut('Space')
+        play_pause_action.triggered.connect(self.toggle_music)
+        music_menu.addAction(play_pause_action)
+        
+        # Add separator
+        music_menu.addSeparator()
+        
+        # Add music selection submenu
+        select_music_menu = QMenu('Select Music', self)
+        select_music_action = music_menu.addMenu(select_music_menu)
+        
+        # Remove the separate action that was causing the issue
+        
+        # Add current music as first item
+        if self.config.get('music_file'):
+            current_name = os.path.basename(self.config['music_file'])
+            current_action = QAction(f'▶ {current_name}', self)
+            current_action.setEnabled(False)
+            select_music_menu.addAction(current_action)
+            select_music_menu.addSeparator()
+        
+        # Add music history items
+        if self.music_history:
+            for music_path in self.music_history[:10]:  # Show last 10
+                if os.path.exists(music_path):
+                    music_name = os.path.basename(music_path)
+                    action = QAction(music_name, self)
+                    action.setData(music_path)
+                    action.triggered.connect(lambda checked, path=music_path: self.change_music(path))
+                    select_music_menu.addAction(action)
+        else:
+            no_history_action = QAction('No music history', self)
+            no_history_action.setEnabled(False)
+            select_music_menu.addAction(no_history_action)
             
     def setup_shortcuts(self):
         """Set up keyboard shortcuts"""
@@ -107,10 +139,10 @@ class MainWindow(QMainWindow):
         
     def setup_music(self):
         """Set up background music"""
-        music_dir = self.config.get('music_dir')
-        if music_dir:
+        music_file = self.config.get('music_file')
+        if music_file:
             try:
-                if self.music_player.load_music_directory(music_dir):
+                if self.music_player.load_music_file(music_file):
                     self.music_player.play()
                     # Set up timer to check for track end
                     self.music_timer = QTimer()
@@ -145,3 +177,29 @@ class MainWindow(QMainWindow):
         self.image_viewer.stop()
         self.music_player.stop()
         event.accept()
+        
+    def load_music_history(self):
+        """Load music history from settings"""
+        history_json = self.settings.value('music_history', '[]')
+        try:
+            history = json.loads(history_json)
+            # Filter out non-existent paths
+            return [path for path in history if os.path.exists(path)]
+        except:
+            return []
+            
+    def change_music(self, music_path: str):
+        """Change to a different music file"""
+        if os.path.exists(music_path):
+            # Stop current music
+            self.music_player.stop()
+            
+            # Load and play new music
+            if self.music_player.load_music_file(music_path):
+                self.music_player.play()
+                
+                # Update config
+                self.config['music_file'] = music_path
+                
+                # Don't recreate the entire menu bar - it causes duplicates
+                # The current music is already playing, no need to update UI
