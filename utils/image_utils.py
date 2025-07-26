@@ -1,14 +1,15 @@
 import os
 import random
 from typing import List, Tuple, Optional
-from PIL import Image
+from PIL import Image, ImageOps
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtCore import Qt
 
 
 def get_image_files(directory: str) -> List[str]:
     """Get all image files from a directory"""
-    supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'}
+    # Note: .gif might have issues with animations, only first frame will be shown
+    supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp', '.tiff', '.tif'}
     image_files = []
     
     for file in os.listdir(directory):
@@ -25,20 +26,51 @@ def load_and_scale_image(image_path: str, target_size: Tuple[int, int],
         # Load image with PIL first for better format support
         pil_image = Image.open(image_path)
         
-        # Convert to RGB if necessary
-        if pil_image.mode not in ('RGB', 'RGBA'):
-            pil_image = pil_image.convert('RGB')
-            
-        # Convert PIL image to QPixmap
+        # Handle EXIF orientation for JPEG images
+        try:
+            pil_image = ImageOps.exif_transpose(pil_image)
+        except:
+            # If EXIF handling fails, continue with original image
+            pass
+        
+        # Handle different image modes
         if pil_image.mode == 'RGBA':
-            data = pil_image.tobytes('raw', 'RGBA')
-            qimage = QImage(data, pil_image.width, pil_image.height, 
-                           QImage.Format.Format_RGBA8888)
+            # Keep RGBA
+            pil_image = pil_image.convert('RGBA')
+            bytes_per_line = 4 * pil_image.width
+            qimage_format = QImage.Format.Format_RGBA8888
+        elif pil_image.mode in ('LA', 'PA'):
+            # Convert grayscale with alpha to RGBA
+            pil_image = pil_image.convert('RGBA')
+            bytes_per_line = 4 * pil_image.width
+            qimage_format = QImage.Format.Format_RGBA8888
+        elif pil_image.mode == 'P':
+            # Convert palette images to RGBA to preserve transparency if any
+            if 'transparency' in pil_image.info:
+                pil_image = pil_image.convert('RGBA')
+                bytes_per_line = 4 * pil_image.width
+                qimage_format = QImage.Format.Format_RGBA8888
+            else:
+                pil_image = pil_image.convert('RGB')
+                bytes_per_line = 3 * pil_image.width
+                qimage_format = QImage.Format.Format_RGB888
         else:
-            data = pil_image.tobytes('raw', 'RGB')
-            qimage = QImage(data, pil_image.width, pil_image.height, 
-                           QImage.Format.Format_RGB888)
+            # Convert everything else to RGB (including L, 1, CMYK, etc.)
+            pil_image = pil_image.convert('RGB')
+            bytes_per_line = 3 * pil_image.width
+            qimage_format = QImage.Format.Format_RGB888
             
+        # Get image data and create QImage with proper byte alignment
+        img_data = pil_image.tobytes()
+        
+        # Create QImage with explicit bytes per line for proper alignment
+        qimage = QImage(img_data, pil_image.width, pil_image.height, 
+                       bytes_per_line, qimage_format)
+        
+        # Make a copy to ensure data persistence
+        qimage = qimage.copy()
+        
+        # Convert to pixmap
         pixmap = QPixmap.fromImage(qimage)
         
         # Scale to target size

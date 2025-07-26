@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame, QGraphicsOpacityEffect
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize, QPropertyAnimation
-from PyQt6.QtGui import QPixmap, QPalette, QColor
+from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize, QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup
+from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform
 from typing import List, Optional
 import sys
 import random
@@ -48,6 +48,11 @@ class ImageLabel(QLabel):
         super().resizeEvent(event)
         if self._original_pixmap and not self._original_pixmap.isNull():
             self.update_display()
+            
+    def clear(self):
+        """Clear the label"""
+        super().clear()
+        self._original_pixmap = None
 
 
 class ImageSlot(QFrame):
@@ -57,6 +62,7 @@ class ImageSlot(QFrame):
         super().__init__(parent)
         self.slot_index = slot_index
         self.current_image_path = ""
+        self.is_transitioning = False
         self.setFrameStyle(QFrame.Shape.NoFrame)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.init_ui()
@@ -66,18 +72,95 @@ class ImageSlot(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        self.image_label = ImageLabel()
-        layout.addWidget(self.image_label)
+        # Create two labels for smooth transitions
+        self.current_label = ImageLabel()
+        self.next_label = ImageLabel()
+        self.next_label.hide()
         
+        # Stack them on top of each other
+        self.current_label.setParent(self)
+        self.next_label.setParent(self)
+        
+        # Set up opacity effects
+        self.current_opacity = QGraphicsOpacityEffect()
+        self.next_opacity = QGraphicsOpacityEffect()
+        self.current_label.setGraphicsEffect(self.current_opacity)
+        self.next_label.setGraphicsEffect(self.next_opacity)
+        
+        layout.addWidget(self.current_label)
         self.setLayout(layout)
         
-    def show_image(self, image_path: str, pixmap: QPixmap):
-        """Display new image immediately"""
-        if not pixmap:
+    def show_image(self, image_path: str, pixmap: QPixmap, initial=False):
+        """Display new image with optional transition"""
+        if not pixmap or self.is_transitioning:
             return
             
         self.current_image_path = image_path
-        self.image_label.set_image(pixmap)
+        
+        if initial:
+            # Initial load - no animation
+            self.current_label.set_image(pixmap)
+            self.current_opacity.setOpacity(1.0)
+        else:
+            # Animate transition with random effect
+            self.is_transitioning = True
+            effect_type = random.choice(['fade', 'fade_rotate'])
+            
+            if effect_type == 'fade':
+                self.simple_fade_transition(pixmap)
+            else:
+                self.fade_rotate_transition(pixmap)
+                
+    def simple_fade_transition(self, pixmap: QPixmap):
+        """Simple fade transition"""
+        # Set new image on next label
+        self.next_label.set_image(pixmap)
+        self.next_label.move(self.current_label.pos())
+        self.next_label.resize(self.current_label.size())
+        self.next_label.show()
+        
+        # Create fade animations
+        fade_out = QPropertyAnimation(self.current_opacity, b"opacity")
+        fade_out.setDuration(800)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.0)
+        
+        fade_in = QPropertyAnimation(self.next_opacity, b"opacity")
+        fade_in.setDuration(800)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        
+        # Parallel animation
+        self.anim_group = QParallelAnimationGroup()
+        self.anim_group.addAnimation(fade_out)
+        self.anim_group.addAnimation(fade_in)
+        self.anim_group.finished.connect(self.on_transition_complete)
+        self.anim_group.start()
+        
+    def fade_rotate_transition(self, pixmap: QPixmap):
+        """Fade with slight rotation effect"""
+        # For safety, just do a simple fade to avoid breaking display
+        self.simple_fade_transition(pixmap)
+        
+    def on_transition_complete(self):
+        """Handle transition completion"""
+        # Swap labels
+        self.current_label, self.next_label = self.next_label, self.current_label
+        self.current_opacity, self.next_opacity = self.next_opacity, self.current_opacity
+        
+        # Hide the old label
+        self.next_label.hide()
+        self.next_opacity.setOpacity(0.0)
+        
+        self.is_transitioning = False
+        
+    def resizeEvent(self, event):
+        """Handle resize to keep labels aligned"""
+        super().resizeEvent(event)
+        # Make sure both labels fill the slot
+        rect = self.rect()
+        self.current_label.setGeometry(rect)
+        self.next_label.setGeometry(rect)
         
     def sizeHint(self):
         """Provide size hint to maintain equal sizes"""
@@ -167,7 +250,7 @@ class ImageViewer(QWidget):
         self.current_images[index] = image_path
         pixmap = self.load_image_for_display(image_path)
         if pixmap:
-            self.image_slots[index].show_image(image_path, pixmap)
+            self.image_slots[index].show_image(image_path, pixmap, initial=True)
             
     def start_timer(self, index: int):
         """Start timer for specific slot"""
@@ -204,7 +287,7 @@ class ImageViewer(QWidget):
             
             pixmap = self.load_image_for_display(new_image)
             if pixmap:
-                self.image_slots[index].show_image(new_image, pixmap)
+                self.image_slots[index].show_image(new_image, pixmap, initial=False)
                 self.images_changed.emit()
                 
         # Reset timer with new interval
