@@ -17,8 +17,23 @@ class ConfigDialog(QDialog):
         self.music_history = self.load_history('music_history')
         
         # Set default directories
-        self.images_dir = os.path.abspath("./images") if os.path.exists("./images") else ""
-        self.music_file = ""  # Changed from music_dir to music_file
+        # Use top of history if available, else fall back to ./images
+        if self.images_history:
+            self.images_dir = self.images_history[0]
+        elif os.path.exists("./images"):
+            self.images_dir = os.path.abspath("./images")
+        else:
+            self.images_dir = ""
+            
+        # Set default music file
+        # Use top of history if available, else find first mp3 in ./music
+        if self.music_history:
+            self.music_file = self.music_history[0]
+        elif os.path.exists("./music"):
+            self.music_file = self.get_first_music_file("./music")
+        else:
+            self.music_file = ""
+            
         self.image_count = 3
         self.init_ui()
         
@@ -35,10 +50,14 @@ class ConfigDialog(QDialog):
         # Dropdown for history
         self.images_combo = QComboBox()
         self.images_combo.setEditable(False)
-        self.images_combo.addItem("Select from history..." if self.images_history else "No history")
-        self.images_combo.addItems(self.images_history)
-        if self.images_dir:
-            self.images_combo.setCurrentText(self.images_dir)
+        if self.images_history:
+            self.images_combo.addItems(self.images_history)
+            self.images_combo.setCurrentIndex(0)  # Select first item (most recent)
+        else:
+            self.images_combo.addItem("No history")
+            if self.images_dir:  # If we have a default ./images dir
+                self.images_combo.addItem(self.images_dir)
+                self.images_combo.setCurrentIndex(1)
         self.images_combo.currentTextChanged.connect(self.on_images_combo_changed)
         
         # Path display and browse button
@@ -62,15 +81,19 @@ class ConfigDialog(QDialog):
         # Dropdown for history
         self.music_combo = QComboBox()
         self.music_combo.setEditable(False)
-        self.music_combo.addItem("Select from history..." if self.music_history else "No history")
-        # Show only filenames in dropdown
-        for file_path in self.music_history:
-            self.music_combo.addItem(os.path.basename(file_path), file_path)
-        if self.music_file:
-            # Find and select the current file
-            index = self.music_combo.findData(self.music_file)
-            if index >= 0:
-                self.music_combo.setCurrentIndex(index)
+        
+        if self.music_history:
+            # Show only filenames in dropdown
+            for file_path in self.music_history:
+                self.music_combo.addItem(os.path.basename(file_path), file_path)
+            self.music_combo.setCurrentIndex(0)  # Select first item (most recent)
+        else:
+            self.music_combo.addItem("No history")
+            # If we found a default music file, add it
+            if self.music_file:
+                self.music_combo.addItem(os.path.basename(self.music_file), self.music_file)
+                self.music_combo.setCurrentIndex(1)
+                
         self.music_combo.currentIndexChanged.connect(self.on_music_combo_changed)
         
         # Path display and browse button
@@ -140,9 +163,8 @@ class ConfigDialog(QDialog):
             
             # Update combo box
             self.images_combo.clear()
-            self.images_combo.addItem("Select from history...")
             self.images_combo.addItems(self.images_history)
-            self.images_combo.setCurrentText(dir_path)
+            self.images_combo.setCurrentIndex(0)  # Select the newly added item
             
     def browse_music_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -159,14 +181,9 @@ class ConfigDialog(QDialog):
             
             # Update combo box
             self.music_combo.clear()
-            self.music_combo.addItem("Select from history...")
             for path in self.music_history:
                 self.music_combo.addItem(os.path.basename(path), path)
-            
-            # Select the new file
-            index = self.music_combo.findData(file_path)
-            if index >= 0:
-                self.music_combo.setCurrentIndex(index)
+            self.music_combo.setCurrentIndex(0)  # Select the newly added item
             
     def on_count_changed(self, text):
         self.image_count = int(text)
@@ -228,14 +245,14 @@ class ConfigDialog(QDialog):
         
     def on_images_combo_changed(self, text):
         """Handle images combo selection"""
-        if text and text not in ["Select from history...", "No history"] and os.path.exists(text):
+        if text and text != "No history" and os.path.exists(text):
             self.images_dir = text
             self.images_path_edit.setText(text)
             self.validate_start_button()
             
     def on_music_combo_changed(self, index):
         """Handle music combo selection"""
-        if index > 0:  # Skip "Select from history..." option
+        if index >= 0:
             file_path = self.music_combo.itemData(index)
             if file_path and os.path.exists(file_path):
                 self.music_file = file_path
@@ -260,3 +277,13 @@ class ConfigDialog(QDialog):
             self.images_combo.addItem("No history")
             self.music_combo.clear()
             self.music_combo.addItem("No history")
+            
+    def get_first_music_file(self, directory):
+        """Get the first music file from a directory"""
+        if not os.path.exists(directory):
+            return ""
+        supported_formats = {'.mp3', '.wav', '.ogg', '.flac'}
+        for file in sorted(os.listdir(directory)):
+            if any(file.lower().endswith(fmt) for fmt in supported_formats):
+                return os.path.abspath(os.path.join(directory, file))
+        return ""
