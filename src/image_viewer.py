@@ -280,9 +280,15 @@ class ImageViewer(QWidget):
         for i in range(min(self.image_count, len(available_images))):
             self.display_initial_image(i, available_images[i])
             
-        # Start timers after a short delay
-        for i, timer in enumerate(self.timers):
-            QTimer.singleShot(2000 + i * 500, partial(self.start_timer, i))
+        # Start all timers immediately with different intervals
+        for i in range(len(self.timers)):
+            if i == 0:
+                # First timer starts with 2 second interval
+                self.timers[0].start(2000)
+            else:
+                # Other timers start with random 3-5 second intervals
+                interval = random.randint(3000, 5000)
+                self.timers[i].start(interval)
             
     def calculate_slot_dimensions(self):
         """Calculate dimensions for each slot"""
@@ -310,7 +316,8 @@ class ImageViewer(QWidget):
             
     def start_timer(self, index: int):
         """Start timer for specific slot"""
-        interval = random.randint(3000, 5000)  # 3-5 seconds
+        # Simple random interval between 3-5 seconds
+        interval = random.randint(3000, 5000)
         self.timers[index].start(interval)
         
     def stop(self):
@@ -384,7 +391,7 @@ class ImageViewer(QWidget):
                 self.image_slots[index].show_image(new_image, pixmap, initial=False)
                 self.images_changed.emit()
                 
-        # Reset timer with new interval
+        # Reset timer with new random interval
         self.timers[index].stop()
         interval = random.randint(3000, 5000)
         self.timers[index].start(interval)
