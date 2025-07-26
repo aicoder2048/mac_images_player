@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame, QGraphicsOpacityEffect
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize, QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup
-from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform
+from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform, QPainter, QFont, QPen
 from typing import List, Optional
 import sys
 import random
@@ -58,13 +58,17 @@ class ImageLabel(QLabel):
 class ImageSlot(QFrame):
     """Container for a single image display slot"""
     
+    clicked = pyqtSignal(int)  # Signal when clicked, sends slot index
+    
     def __init__(self, slot_index: int, parent=None):
         super().__init__(parent)
         self.slot_index = slot_index
         self.current_image_path = ""
         self.is_transitioning = False
+        self.is_pinned = False
         self.setFrameStyle(QFrame.Shape.NoFrame)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.init_ui()
         
     def init_ui(self):
@@ -88,6 +92,24 @@ class ImageSlot(QFrame):
         self.next_label.setGraphicsEffect(self.next_opacity)
         
         layout.addWidget(self.current_label)
+        
+        # Create pin icon label (overlay)
+        self.pin_label = QLabel(self)
+        self.pin_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 0, 0, 150);
+                color: white;
+                border-radius: 20px;
+                padding: 8px;
+                font-size: 24px;
+            }
+        """)
+        self.pin_label.setText("📌")
+        self.pin_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pin_label.setFixedSize(40, 40)
+        self.pin_label.hide()
+        self.pin_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        
         self.setLayout(layout)
         
     def show_image(self, image_path: str, pixmap: QPixmap, initial=False):
@@ -161,10 +183,25 @@ class ImageSlot(QFrame):
         rect = self.rect()
         self.current_label.setGeometry(rect)
         self.next_label.setGeometry(rect)
+        # Position pin label in top-right corner
+        self.pin_label.move(rect.width() - 50, 10)
         
     def sizeHint(self):
         """Provide size hint to maintain equal sizes"""
         return QSize(300, 600)  # Default size hint
+        
+    def mousePressEvent(self, event):
+        """Handle mouse clicks to toggle pin state"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.slot_index)
+            
+    def set_pinned(self, pinned: bool):
+        """Set the pinned state and update visual indicator"""
+        self.is_pinned = pinned
+        if pinned:
+            self.pin_label.show()
+        else:
+            self.pin_label.hide()
 
 
 class ImageViewer(QWidget):
@@ -197,6 +234,7 @@ class ImageViewer(QWidget):
         # Create image slots
         for i in range(self.image_count):
             slot = ImageSlot(i)
+            slot.clicked.connect(self.toggle_pin)  # Connect click signal
             self.image_slots.append(slot)
             main_layout.addWidget(slot, 1)  # Equal stretch
             
@@ -276,6 +314,13 @@ class ImageViewer(QWidget):
         if index >= len(self.image_slots):
             return
             
+        # Skip if this slot is pinned
+        if self.image_slots[index].is_pinned:
+            # Keep the timer running but don't change the image
+            self.timers[index].stop()
+            self.timers[index].start(random.randint(3000, 5000))
+            return
+            
         # Get available images
         available = [img for img in self.image_files if img not in self.current_images]
         if not available:
@@ -300,3 +345,10 @@ class ImageViewer(QWidget):
         # Recalculate dimensions
         if hasattr(self, 'image_slots') and self.image_slots:
             self.calculate_slot_dimensions()
+            
+    @pyqtSlot(int)
+    def toggle_pin(self, slot_index: int):
+        """Toggle pin state for a slot"""
+        if slot_index < len(self.image_slots):
+            slot = self.image_slots[slot_index]
+            slot.set_pinned(not slot.is_pinned)
