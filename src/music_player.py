@@ -12,6 +12,7 @@ class MusicPlayer:
         self.music_files: List[str] = []
         self.current_index = 0
         self.is_playing = False
+        self.is_paused = False  # Track pause state separately
         self.volume = 0.7  # Default volume
         self.music_ended = False
         
@@ -61,6 +62,7 @@ class MusicPlayer:
                 pygame.mixer.music.set_volume(self.volume)
                 pygame.mixer.music.play()
                 self.music_ended = False
+                self.is_paused = False
             except pygame.error as e:
                 print(f"Error playing {self.music_files[self.current_index]}: {e}")
                 self.next_track()
@@ -79,16 +81,19 @@ class MusicPlayer:
         """Stop playing music"""
         pygame.mixer.music.stop()
         self.is_playing = False
+        self.is_paused = False
         
     def pause(self):
         """Pause the music"""
-        if self.is_playing:
+        if self.is_playing and not self.is_paused:
             pygame.mixer.music.pause()
+            self.is_paused = True
             
     def unpause(self):
         """Resume the music"""
-        if self.is_playing:
+        if self.is_playing and self.is_paused:
             pygame.mixer.music.unpause()
+            self.is_paused = False
             
     def set_volume(self, volume: float):
         """Set volume (0.0 to 1.0)"""
@@ -97,7 +102,7 @@ class MusicPlayer:
         
     def check_music_end(self) -> bool:
         """Check if current track has ended and play next if needed"""
-        if self.is_playing and not pygame.mixer.music.get_busy():
+        if self.is_playing and not self.is_paused and not pygame.mixer.music.get_busy():
             if not self.music_ended:
                 self.music_ended = True
                 self.next_track()

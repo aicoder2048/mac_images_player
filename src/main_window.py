@@ -14,6 +14,8 @@ class MainWindow(QMainWindow):
         self.music_player = MusicPlayer()
         self.settings = QSettings('ImagePlayer', 'Config')
         self.music_history = self.load_music_history()
+        self.is_paused = False  # Track overall pause state
+        self.music_was_playing = False  # Track if music was playing before pause
         self.init_ui()
         self.setup_music()
         
@@ -95,7 +97,7 @@ class MainWindow(QMainWindow):
         
         play_pause_action = QAction('Play/Pause', self)
         play_pause_action.setShortcut('Space')
-        play_pause_action.triggered.connect(self.toggle_music)
+        play_pause_action.triggered.connect(self.toggle_display)
         music_menu.addAction(play_pause_action)
         
         # Add separator
@@ -164,12 +166,23 @@ class MainWindow(QMainWindow):
         if self.isFullScreen():
             self.showNormal()
             
-    def toggle_music(self):
-        """Toggle music play/pause"""
-        if hasattr(self, 'music_timer') and self.music_player.is_playing:
-            if pygame.mixer.music.get_busy():
-                self.music_player.pause()
-            else:
+    def toggle_display(self):
+        """Toggle entire display (images and music) play/pause"""
+        if not self.is_paused:
+            # Pause everything
+            self.is_paused = True
+            self.image_viewer.pause()
+            # Remember if music was playing and pause it
+            if hasattr(self, 'music_player'):
+                self.music_was_playing = self.music_player.is_playing and not self.music_player.is_paused
+                if self.music_was_playing:
+                    self.music_player.pause()
+        else:
+            # Resume everything
+            self.is_paused = False
+            self.image_viewer.resume()
+            # Only unpause music if it was playing before pause
+            if hasattr(self, 'music_player') and self.music_was_playing:
                 self.music_player.unpause()
             
     def closeEvent(self, event):

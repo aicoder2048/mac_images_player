@@ -85,6 +85,7 @@ class ImageSlot(QFrame):
         self.current_label.setParent(self)
         self.next_label.setParent(self)
         
+        
         # Set up opacity effects
         self.current_opacity = QGraphicsOpacityEffect()
         self.next_opacity = QGraphicsOpacityEffect()
@@ -217,6 +218,8 @@ class ImageViewer(QWidget):
         self.current_images: List[str] = [""] * self.image_count
         self.slot_width = 0
         self.slot_height = 0
+        self.is_paused = False
+        self.pause_label = None
         self.init_ui()
         
     def init_ui(self):
@@ -244,6 +247,21 @@ class ImageViewer(QWidget):
             self.timers.append(timer)
         
         self.setLayout(main_layout)
+        
+        # Create single pause indicator (floating)
+        self.pause_label = QLabel(self)
+        self.pause_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 0, 0, 180);
+                color: white;
+                font-size: 36px;
+                font-weight: bold;
+                padding: 15px 25px;
+                border-radius: 10px;
+            }
+        """)
+        self.pause_label.setText("⏸ PAUSED")
+        self.pause_label.hide()
         
     def showEvent(self, event):
         """Start display when widget is shown"""
@@ -300,6 +318,37 @@ class ImageViewer(QWidget):
         for timer in self.timers:
             timer.stop()
             
+    def pause(self):
+        """Pause all image changes"""
+        if not self.is_paused:
+            self.is_paused = True
+            # Stop all timers
+            for timer in self.timers:
+                if timer.isActive():
+                    timer.stop()
+            # Show pause indicator
+            self.pause_label.show()
+            self.position_pause_label()
+                    
+    def resume(self):
+        """Resume all image changes"""
+        if self.is_paused:
+            self.is_paused = False
+            # Hide pause indicator
+            self.pause_label.hide()
+            # Restart timers with random intervals
+            for i in range(len(self.timers)):
+                interval = random.randint(3000, 5000)
+                self.timers[i].start(interval)
+                
+    def position_pause_label(self):
+        """Position pause label in center of viewer"""
+        if self.pause_label:
+            self.pause_label.adjustSize()
+            x = (self.width() - self.pause_label.width()) // 2
+            y = self.height() - self.pause_label.height() - 50
+            self.pause_label.move(x, y)
+            
     def load_image_for_display(self, image_path: str) -> Optional[QPixmap]:
         """Load and scale image for slot size"""
         # Use pre-calculated slot dimensions
@@ -337,7 +386,8 @@ class ImageViewer(QWidget):
                 
         # Reset timer with new interval
         self.timers[index].stop()
-        self.timers[index].start(random.randint(3000, 5000))
+        interval = random.randint(3000, 5000)
+        self.timers[index].start(interval)
         
     def resizeEvent(self, event):
         """Handle window resize"""
@@ -345,6 +395,9 @@ class ImageViewer(QWidget):
         # Recalculate dimensions
         if hasattr(self, 'image_slots') and self.image_slots:
             self.calculate_slot_dimensions()
+        # Reposition pause label if visible
+        if self.is_paused and self.pause_label:
+            self.position_pause_label()
             
     @pyqtSlot(int)
     def toggle_pin(self, slot_index: int):
