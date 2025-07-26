@@ -1,13 +1,21 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QLineEdit, QComboBox, QFileDialog,
                              QGroupBox, QMessageBox)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings
 import os
+import json
 
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Initialize settings
+        self.settings = QSettings('ImagePlayer', 'Config')
+        
+        # Load history
+        self.images_history = self.load_history('images_history')
+        self.music_history = self.load_history('music_history')
+        
         # Set default directories
         self.images_dir = os.path.abspath("./images") if os.path.exists("./images") else ""
         self.music_dir = os.path.abspath("./music") if os.path.exists("./music") else ""
@@ -16,32 +24,62 @@ class ConfigDialog(QDialog):
         
     def init_ui(self):
         self.setWindowTitle("Image Player Configuration")
-        self.setFixedSize(500, 350)
+        self.setFixedSize(550, 450)
         
         layout = QVBoxLayout()
         
         # Images directory selection
         images_group = QGroupBox("Images Directory")
-        images_layout = QHBoxLayout()
+        images_layout = QVBoxLayout()
+        
+        # Dropdown for history
+        self.images_combo = QComboBox()
+        self.images_combo.setEditable(False)
+        self.images_combo.addItem("Select from history..." if self.images_history else "No history")
+        self.images_combo.addItems(self.images_history)
+        if self.images_dir:
+            self.images_combo.setCurrentText(self.images_dir)
+        self.images_combo.currentTextChanged.connect(self.on_images_combo_changed)
+        
+        # Path display and browse button
+        path_layout = QHBoxLayout()
         self.images_path_edit = QLineEdit()
         self.images_path_edit.setReadOnly(True)
         self.images_path_edit.setText(self.images_dir)
         self.images_browse_btn = QPushButton("Browse...")
         self.images_browse_btn.clicked.connect(self.browse_images_dir)
-        images_layout.addWidget(self.images_path_edit)
-        images_layout.addWidget(self.images_browse_btn)
+        path_layout.addWidget(self.images_path_edit)
+        path_layout.addWidget(self.images_browse_btn)
+        
+        images_layout.addWidget(self.images_combo)
+        images_layout.addLayout(path_layout)
         images_group.setLayout(images_layout)
         
         # Music directory selection
         music_group = QGroupBox("Music Directory (Optional)")
-        music_layout = QHBoxLayout()
+        music_layout = QVBoxLayout()
+        
+        # Dropdown for history
+        self.music_combo = QComboBox()
+        self.music_combo.setEditable(False)
+        self.music_combo.addItem("Select from history..." if self.music_history else "No history")
+        self.music_combo.addItems(self.music_history)
+        if self.music_dir:
+            self.music_combo.setCurrentText(self.music_dir)
+        self.music_combo.currentTextChanged.connect(self.on_music_combo_changed)
+        
+        # Path display and browse button
+        music_path_layout = QHBoxLayout()
         self.music_path_edit = QLineEdit()
         self.music_path_edit.setReadOnly(True)
         self.music_path_edit.setText(self.music_dir)
         self.music_browse_btn = QPushButton("Browse...")
         self.music_browse_btn.clicked.connect(self.browse_music_dir)
-        music_layout.addWidget(self.music_path_edit)
-        music_layout.addWidget(self.music_browse_btn)
+        music_path_layout.addWidget(self.music_path_edit)
+        music_path_layout.addWidget(self.music_browse_btn)
+        
+        music_layout.addWidget(self.music_combo)
+        music_layout.addLayout(music_path_layout)
         music_group.setLayout(music_layout)
         
         # Image count selection
@@ -58,11 +96,14 @@ class ConfigDialog(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
+        self.clear_history_btn = QPushButton("Clear History")
+        self.clear_history_btn.clicked.connect(self.clear_history)
         self.start_btn = QPushButton("Start")
         self.start_btn.clicked.connect(self.on_start)
         self.start_btn.setEnabled(False)
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(self.clear_history_btn)
         button_layout.addStretch()
         button_layout.addWidget(self.start_btn)
         button_layout.addWidget(self.cancel_btn)
@@ -89,6 +130,15 @@ class ConfigDialog(QDialog):
             self.images_path_edit.setText(dir_path)
             self.validate_start_button()
             
+            # Add to history
+            self.images_history = self.add_to_history(dir_path, self.images_history, 'images_history')
+            
+            # Update combo box
+            self.images_combo.clear()
+            self.images_combo.addItem("Select from history...")
+            self.images_combo.addItems(self.images_history)
+            self.images_combo.setCurrentText(dir_path)
+            
     def browse_music_dir(self):
         dir_path = QFileDialog.getExistingDirectory(
             self, "Select Music Directory", 
@@ -97,6 +147,15 @@ class ConfigDialog(QDialog):
         if dir_path:
             self.music_dir = dir_path
             self.music_path_edit.setText(dir_path)
+            
+            # Add to history
+            self.music_history = self.add_to_history(dir_path, self.music_history, 'music_history')
+            
+            # Update combo box
+            self.music_combo.clear()
+            self.music_combo.addItem("Select from history...")
+            self.music_combo.addItems(self.music_history)
+            self.music_combo.setCurrentText(dir_path)
             
     def on_count_changed(self, text):
         self.image_count = int(text)
@@ -131,3 +190,60 @@ class ConfigDialog(QDialog):
             'music_dir': self.music_dir,
             'image_count': self.image_count
         }
+        
+    def load_history(self, key):
+        """Load history from settings"""
+        history_json = self.settings.value(key, '[]')
+        try:
+            history = json.loads(history_json)
+            # Filter out non-existent paths
+            return [path for path in history if os.path.exists(path)]
+        except:
+            return []
+            
+    def save_history(self, key, history_list):
+        """Save history to settings"""
+        self.settings.setValue(key, json.dumps(history_list))
+        
+    def add_to_history(self, path, history_list, history_key):
+        """Add path to history if not already present"""
+        if path and os.path.exists(path) and path not in history_list:
+            history_list.insert(0, path)
+            # Keep only last 10 entries
+            history_list = history_list[:10]
+            self.save_history(history_key, history_list)
+            return history_list
+        return history_list
+        
+    def on_images_combo_changed(self, text):
+        """Handle images combo selection"""
+        if text and text not in ["Select from history...", "No history"] and os.path.exists(text):
+            self.images_dir = text
+            self.images_path_edit.setText(text)
+            self.validate_start_button()
+            
+    def on_music_combo_changed(self, text):
+        """Handle music combo selection"""
+        if text and text not in ["Select from history...", "No history"] and os.path.exists(text):
+            self.music_dir = text
+            self.music_path_edit.setText(text)
+            
+    def clear_history(self):
+        """Clear all history"""
+        reply = QMessageBox.question(
+            self, "Clear History", 
+            "Are you sure you want to clear all directory history?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.images_history = []
+            self.music_history = []
+            self.save_history('images_history', [])
+            self.save_history('music_history', [])
+            
+            # Update combo boxes
+            self.images_combo.clear()
+            self.images_combo.addItem("No history")
+            self.music_combo.clear()
+            self.music_combo.addItem("No history")

@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame, QGraphicsOpacityEffect
+from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize, QPropertyAnimation
 from PyQt6.QtGui import QPixmap, QPalette, QColor
 from typing import List, Optional
 import sys
@@ -136,9 +136,6 @@ class ImageViewer(QWidget):
         
         available_images = self.image_files.copy()
         random.shuffle(available_images)
-        
-        # print(f"Starting image viewer with {len(available_images)} images")
-        # print(f"Slot dimensions: {self.slot_width}x{self.slot_height}")
         
         # Display initial images
         for i in range(min(self.image_count, len(available_images))):
