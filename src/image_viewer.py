@@ -8,8 +8,9 @@ import random
 from functools import partial
 from PIL import Image
 sys.path.append('..')
-from utils.image_utils import (get_image_files, load_and_scale_image, 
-                              get_random_images, calculate_image_dimensions)
+from utils.image_utils import (get_image_files, get_image_files_from_dirs, 
+                              load_and_scale_image, get_random_images, 
+                              calculate_image_dimensions)
 
 
 class DisplayMode(Enum):
@@ -312,7 +313,12 @@ class ImageViewer(QWidget):
     def __init__(self, config: dict, parent=None):
         super().__init__(parent)
         self.config = config
-        self.image_files = get_image_files(config['images_dir'])
+        # Handle both old single-dir and new multi-dir configs
+        if 'images_dirs' in config:
+            self.image_files = get_image_files_from_dirs(config['images_dirs'])
+        else:
+            # Fallback for old config format
+            self.image_files = get_image_files(config.get('images_dir', ''))
         self.image_count = config['image_count']
         self.image_slots: List[ImageSlot] = []
         self.timers: List[QTimer] = []
@@ -609,6 +615,13 @@ class ImageViewer(QWidget):
                 self.portrait_images.append(img_path)
                 
         print(f"Categorized images: {len(self.portrait_images)} portrait, {len(self.landscape_images)} landscape")
+        
+        # Show source directories info
+        if 'images_dirs' in self.config:
+            print(f"Images loaded from {len(self.config['images_dirs'])} directories:")
+            for dir_path in self.config['images_dirs']:
+                dir_count = len([f for f in self.image_files if f.startswith(dir_path)])
+                print(f"  - {dir_path}: {dir_count} images")
         
     def on_cooldown_finished(self):
         """Called when mode switch cooldown expires"""

@@ -12,11 +12,31 @@ def get_image_files(directory: str) -> List[str]:
     supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp', '.tiff', '.tif'}
     image_files = []
     
-    for file in os.listdir(directory):
-        if any(file.lower().endswith(fmt) for fmt in supported_formats):
-            image_files.append(os.path.join(directory, file))
+    if os.path.exists(directory):
+        try:
+            for file in os.listdir(directory):
+                if any(file.lower().endswith(fmt) for fmt in supported_formats):
+                    image_files.append(os.path.join(directory, file))
+        except Exception as e:
+            print(f"Error reading directory {directory}: {e}")
             
     return image_files
+
+
+def get_image_files_from_dirs(directories: List[str]) -> List[str]:
+    """Get all image files from multiple directories"""
+    all_files = []
+    seen_names = set()  # Track filenames to avoid duplicates
+    
+    for directory in directories:
+        dir_files = get_image_files(directory)
+        for file_path in dir_files:
+            # Use full path to ensure uniqueness
+            if file_path not in seen_names:
+                all_files.append(file_path)
+                seen_names.add(file_path)
+                
+    return all_files
 
 
 def load_and_scale_image(image_path: str, target_size: Tuple[int, int], 

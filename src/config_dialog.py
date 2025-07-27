@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QLineEdit, QComboBox, QFileDialog,
-                             QGroupBox, QMessageBox)
+                             QGroupBox, QMessageBox, QListWidget, QListWidgetItem,
+                             QAbstractItemView)
 from PyQt6.QtCore import Qt, QSettings
 import os
 import json
@@ -12,19 +13,9 @@ class ConfigDialog(QDialog):
         # Initialize settings
         self.settings = QSettings('ImagePlayer', 'Config')
         
-        # Load history
-        self.images_history = self.load_history('images_history')
-        self.music_history = self.load_history('music_history')
+        # Load history - handle both old and new formats
+        self.load_and_migrate_history()
         
-        # Set default directories
-        # Use top of history if available, else fall back to ./images
-        if self.images_history:
-            self.images_dir = self.images_history[0]
-        elif os.path.exists("./images"):
-            self.images_dir = os.path.abspath("./images")
-        else:
-            self.images_dir = ""
-            
         # Set default music file
         # Use top of history if available, else find first mp3 in ./music
         if self.music_history:
@@ -37,41 +28,76 @@ class ConfigDialog(QDialog):
         self.image_count = 3
         self.init_ui()
         
+    def load_and_migrate_history(self):
+        """Load history and migrate from old single-dir format to multi-dir format"""
+        # Try to load new format first
+        dirs_history_json = self.settings.value('images_dirs_history', '[]')
+        try:
+            self.images_dirs_history = json.loads(dirs_history_json)
+        except:
+            self.images_dirs_history = []
+            
+        # Check for old format and migrate
+        if not self.images_dirs_history:
+            old_history = self.load_history('images_history')
+            if old_history:
+                # Convert old single directories to new format
+                self.images_dirs_history = [[dir] for dir in old_history[:5]]  # Keep last 5
+                self.save_dirs_history()
+                
+        # Set default directories
+        if self.images_dirs_history and self.images_dirs_history[0]:
+            self.images_dirs = self.images_dirs_history[0].copy()
+        elif os.path.exists("./images"):
+            self.images_dirs = [os.path.abspath("./images")]
+        else:
+            self.images_dirs = []
+            
+        # Load music history (unchanged)
+        self.music_history = self.load_history('music_history')
+        
     def init_ui(self):
         self.setWindowTitle("Image Player Configuration")
-        self.setFixedSize(550, 450)
+        self.setFixedSize(650, 550)
         
         layout = QVBoxLayout()
         
-        # Images directory selection
-        images_group = QGroupBox("Images Directory")
+        # Images directories selection
+        images_group = QGroupBox("Image Directories")
         images_layout = QVBoxLayout()
         
-        # Dropdown for history
-        self.images_combo = QComboBox()
-        self.images_combo.setEditable(False)
-        if self.images_history:
-            self.images_combo.addItems(self.images_history)
-            self.images_combo.setCurrentIndex(0)  # Select first item (most recent)
-        else:
-            self.images_combo.addItem("No history")
-            if self.images_dir:  # If we have a default ./images dir
-                self.images_combo.addItem(self.images_dir)
-                self.images_combo.setCurrentIndex(1)
-        self.images_combo.currentTextChanged.connect(self.on_images_combo_changed)
+        # History dropdown for quick selection
+        history_layout = QHBoxLayout()
+        history_layout.addWidget(QLabel("Recent:"))
+        self.history_combo = QComboBox()
+        self.history_combo.setEditable(False)
+        self.update_history_combo()
+        self.history_combo.currentIndexChanged.connect(self.on_history_selected)
+        history_layout.addWidget(self.history_combo, 1)
+        images_layout.addLayout(history_layout)
         
-        # Path display and browse button
-        path_layout = QHBoxLayout()
-        self.images_path_edit = QLineEdit()
-        self.images_path_edit.setReadOnly(True)
-        self.images_path_edit.setText(self.images_dir)
-        self.images_browse_btn = QPushButton("Browse...")
-        self.images_browse_btn.clicked.connect(self.browse_images_dir)
-        path_layout.addWidget(self.images_path_edit)
-        path_layout.addWidget(self.images_browse_btn)
+        # List widget for directories
+        self.dirs_list = QListWidget()
+        self.dirs_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.dirs_list.itemChanged.connect(self.on_item_changed)  # Handle checkbox changes
+        self.update_dirs_list()
+        images_layout.addWidget(self.dirs_list)
         
-        images_layout.addWidget(self.images_combo)
-        images_layout.addLayout(path_layout)
+        # Buttons for directory management
+        buttons_layout = QHBoxLayout()
+        self.add_dir_btn = QPushButton("Add Directory")
+        self.add_dir_btn.clicked.connect(self.add_directory)
+        self.remove_dir_btn = QPushButton("Remove")
+        self.remove_dir_btn.clicked.connect(self.remove_directory)
+        self.clear_dirs_btn = QPushButton("Clear All")
+        self.clear_dirs_btn.clicked.connect(self.clear_directories)
+        
+        buttons_layout.addWidget(self.add_dir_btn)
+        buttons_layout.addWidget(self.remove_dir_btn)
+        buttons_layout.addWidget(self.clear_dirs_btn)
+        buttons_layout.addStretch()
+        
+        images_layout.addLayout(buttons_layout)
         images_group.setLayout(images_layout)
         
         # Music file selection
@@ -148,23 +174,67 @@ class ConfigDialog(QDialog):
         # Validate start button if default directories exist
         self.validate_start_button()
         
-    def browse_images_dir(self):
+    def update_history_combo(self):
+        """Update the history combo box with recent directory combinations"""
+        self.history_combo.clear()
+        if self.images_dirs_history:
+            for i, dirs in enumerate(self.images_dirs_history[:5]):  # Show last 5
+                # Create a display string for the combination
+                if len(dirs) == 1:
+                    display = os.path.basename(dirs[0])
+                else:
+                    display = f"{len(dirs)} directories"
+                self.history_combo.addItem(display, dirs)
+        else:
+            self.history_combo.addItem("No history")
+            
+    def update_dirs_list(self):
+        """Update the list widget with current directories"""
+        self.dirs_list.clear()
+        for dir_path in self.images_dirs:
+            item = QListWidgetItem(dir_path)
+            item.setCheckState(Qt.CheckState.Checked)
+            self.dirs_list.addItem(item)
+        self.validate_start_button()
+        
+    def add_directory(self):
+        """Add a new directory to the list"""
         dir_path = QFileDialog.getExistingDirectory(
             self, "Select Images Directory", 
             os.path.expanduser("~")
         )
-        if dir_path:
-            self.images_dir = dir_path
-            self.images_path_edit.setText(dir_path)
-            self.validate_start_button()
+        if dir_path and dir_path not in self.images_dirs:
+            self.images_dirs.append(dir_path)
+            self.update_dirs_list()
             
-            # Add to history
-            self.images_history = self.add_to_history(dir_path, self.images_history, 'images_history')
+    def remove_directory(self):
+        """Remove selected directory from the list"""
+        current_item = self.dirs_list.currentItem()
+        if current_item:
+            dir_path = current_item.text()
+            self.images_dirs.remove(dir_path)
+            self.update_dirs_list()
             
-            # Update combo box
-            self.images_combo.clear()
-            self.images_combo.addItems(self.images_history)
-            self.images_combo.setCurrentIndex(0)  # Select the newly added item
+    def clear_directories(self):
+        """Clear all directories"""
+        reply = QMessageBox.question(
+            self, "Clear All Directories", 
+            "Are you sure you want to remove all directories?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.images_dirs.clear()
+            self.update_dirs_list()
+            
+    def on_history_selected(self, index):
+        """Handle history combo selection"""
+        if index >= 0 and self.history_combo.currentData():
+            self.images_dirs = self.history_combo.currentData().copy()
+            self.update_dirs_list()
+            
+    def on_item_changed(self, item):
+        """Handle checkbox state changes"""
+        self.validate_start_button()
             
     def browse_music_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -189,33 +259,66 @@ class ConfigDialog(QDialog):
         self.image_count = int(text)
         
     def validate_start_button(self):
-        # Enable start button only if images directory is selected
-        self.start_btn.setEnabled(bool(self.images_dir))
+        # Enable start button only if at least one directory is selected
+        checked_dirs = self.get_checked_directories()
+        self.start_btn.setEnabled(bool(checked_dirs))
+        
+    def get_checked_directories(self):
+        """Get list of checked directories"""
+        checked = []
+        for i in range(self.dirs_list.count()):
+            item = self.dirs_list.item(i)
+            if item.checkState() == Qt.CheckState.Checked:
+                checked.append(item.text())
+        return checked
         
     def on_start(self):
-        # Validate that images directory contains images
-        if not self.has_images(self.images_dir):
+        # Get checked directories
+        checked_dirs = self.get_checked_directories()
+        if not checked_dirs:
             QMessageBox.warning(
-                self, "No Images Found",
-                "The selected directory does not contain any supported image files."
+                self, "No Directories Selected",
+                "Please select at least one directory."
             )
             return
             
+        # Validate that at least one directory contains images
+        has_any_images = False
+        for directory in checked_dirs:
+            if self.has_images(directory):
+                has_any_images = True
+                break
+                
+        if not has_any_images:
+            QMessageBox.warning(
+                self, "No Images Found",
+                "None of the selected directories contain any supported image files."
+            )
+            return
+            
+        # Save the current combination to history
+        self.save_current_dirs_to_history()
+        
         self.accept()
         
     def has_images(self, directory):
         """Check if directory contains supported image files"""
+        if not os.path.exists(directory):
+            return False
         supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'}
-        for file in os.listdir(directory):
-            if any(file.lower().endswith(fmt) for fmt in supported_formats):
-                return True
+        try:
+            for file in os.listdir(directory):
+                if any(file.lower().endswith(fmt) for fmt in supported_formats):
+                    return True
+        except:
+            return False
         return False
         
     def get_config(self):
         """Return configuration dictionary"""
         return {
-            'images_dir': self.images_dir,
-            'music_file': self.music_file,  # Changed from music_dir
+            'images_dirs': self.get_checked_directories(),  # Changed to multiple dirs
+            'music_file': self.music_file,
             'image_count': self.image_count
         }
         
@@ -233,6 +336,23 @@ class ConfigDialog(QDialog):
         """Save history to settings"""
         self.settings.setValue(key, json.dumps(history_list))
         
+    def save_dirs_history(self):
+        """Save multi-directory history"""
+        self.settings.setValue('images_dirs_history', json.dumps(self.images_dirs_history))
+        
+    def save_current_dirs_to_history(self):
+        """Save current directory combination to history"""
+        checked_dirs = self.get_checked_directories()
+        if checked_dirs:
+            # Remove if already exists
+            if checked_dirs in self.images_dirs_history:
+                self.images_dirs_history.remove(checked_dirs)
+            # Add to front
+            self.images_dirs_history.insert(0, checked_dirs)
+            # Keep only last 10
+            self.images_dirs_history = self.images_dirs_history[:10]
+            self.save_dirs_history()
+        
     def add_to_history(self, path, history_list, history_key):
         """Add path to history if not already present"""
         if path and os.path.exists(path) and path not in history_list:
@@ -243,12 +363,6 @@ class ConfigDialog(QDialog):
             return history_list
         return history_list
         
-    def on_images_combo_changed(self, text):
-        """Handle images combo selection"""
-        if text and text != "No history" and os.path.exists(text):
-            self.images_dir = text
-            self.images_path_edit.setText(text)
-            self.validate_start_button()
             
     def on_music_combo_changed(self, index):
         """Handle music combo selection"""
