@@ -368,6 +368,9 @@ class ImageViewer(QWidget):
         self.portrait_timer_states: List[dict] = []  # Store timer states during landscape mode
         self.landscape_source_slot_index = -1  # Track which slot triggered landscape mode
         
+        # Preview mode tracking
+        self.landscape_preview_pending = False  # Flag to prevent duplicate switches
+        
         self.init_ui()
         
     def parse_timing_range(self, timing_string: str) -> Tuple[int, int]:
@@ -615,9 +618,23 @@ class ImageViewer(QWidget):
                 try:
                     with Image.open(new_image) as img:
                         width, height = img.size
-                        if width > height and not self.transition_in_progress:
-                            # This is a landscape image, switch to landscape mode
-                            self.switch_to_landscape_mode_with_image(new_image, index)
+                        if width > height and not self.transition_in_progress and not self.landscape_preview_pending:
+                            # This is a landscape image, show preview first
+                            print(f"[DEBUG] Landscape image detected in slot {index}, showing preview")
+                            self.landscape_preview_pending = True
+                            
+                            # Show the landscape image in the slot as preview
+                            pixmap = self.load_image_for_display(new_image)
+                            if pixmap:
+                                self.image_slots[index].show_image(new_image, pixmap, initial=False)
+                                self.images_changed.emit()
+                            
+                            # Schedule landscape mode switch after 2 seconds
+                            QTimer.singleShot(2000, lambda: self.delayed_landscape_switch(new_image, index))
+                            
+                            # Keep timer running with a longer interval to prevent changes during preview
+                            self.timers[index].stop()
+                            self.timers[index].start(3000)  # 3 seconds to cover the delay
                             return
                 except Exception as e:
                     print(f"Error checking image orientation: {e}")
@@ -713,6 +730,13 @@ class ImageViewer(QWidget):
         print("[DEBUG] Landscape display complete, returning to portrait mode")
         self.switch_to_portrait_mode()
             
+    def delayed_landscape_switch(self, image_path: str, slot_index: int):
+        """Execute landscape switch after preview delay"""
+        print(f"[DEBUG] Executing delayed landscape switch from slot {slot_index}")
+        self.landscape_preview_pending = False
+        if not self.transition_in_progress and self.current_layout_mode == LayoutMode.PORTRAIT:
+            self.switch_to_landscape_mode_with_image(image_path, slot_index)
+    
     def load_landscape_image(self, image_path: str) -> Optional[QPixmap]:
         """Load and scale landscape image"""
         return load_and_scale_image(image_path, (self.landscape_width, self.landscape_height), maintain_aspect=True)
@@ -733,6 +757,7 @@ class ImageViewer(QWidget):
             
         self.transition_in_progress = True
         self.landscape_source_slot_index = source_slot_index
+        self.landscape_preview_pending = False  # Clear preview flag
         
         # Save portrait timer states before stopping them
         self.portrait_timer_states = []
@@ -762,27 +787,9 @@ class ImageViewer(QWidget):
         if pixmap:
             self.image_slots[source_slot_index].show_image(image_path, pixmap, initial=False, fast_transition=True)
         
-        # Create opacity effects for non-source slots
-        self.transition_opacity_effects = []
-        for i, slot in enumerate(self.image_slots):
-            if i != source_slot_index:
-                opacity_effect = QGraphicsOpacityEffect()
-                opacity_effect.setOpacity(1.0)
-                slot.setGraphicsEffect(opacity_effect)
-                self.transition_opacity_effects.append((i, opacity_effect))
-        
-        # Create fade out animation for non-source slots
-        self.fade_out_animations = QParallelAnimationGroup()
-        for i, opacity_effect in self.transition_opacity_effects:
-            fade_anim = QPropertyAnimation(opacity_effect, b"opacity")
-            fade_anim.setDuration(800)  # 800ms fade out
-            fade_anim.setStartValue(1.0)
-            fade_anim.setEndValue(0.1)  # Fade to 10% opacity instead of completely hiding
-            self.fade_out_animations.addAnimation(fade_anim)
-        
-        # Connect animation completion to layout switch
-        self.fade_out_animations.finished.connect(lambda: self.complete_landscape_transition(image_path))
-        self.fade_out_animations.start()
+        # Directly complete the transition without fading other slots
+        # This keeps all slots visible during the 2-second preview
+        self.complete_landscape_transition(image_path)
         
     def complete_landscape_transition(self, image_path: str):
         """Complete the transition to landscape mode"""
