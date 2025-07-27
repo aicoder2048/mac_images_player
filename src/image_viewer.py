@@ -364,6 +364,10 @@ class ImageViewer(QWidget):
         self.landscape_start_time = 0  # Track when landscape mode started
         self.last_landscape_change_time = 0  # Track time between changes
         
+        # Timer state preservation for better UX
+        self.portrait_timer_states: List[dict] = []  # Store timer states during landscape mode
+        self.landscape_source_slot_index = -1  # Track which slot triggered landscape mode
+        
         self.init_ui()
         
     def parse_timing_range(self, timing_string: str) -> Tuple[int, int]:
@@ -613,7 +617,7 @@ class ImageViewer(QWidget):
                         width, height = img.size
                         if width > height and not self.transition_in_progress:
                             # This is a landscape image, switch to landscape mode
-                            self.switch_to_landscape_mode_with_image(new_image)
+                            self.switch_to_landscape_mode_with_image(new_image, index)
                             return
                 except Exception as e:
                     print(f"Error checking image orientation: {e}")
@@ -756,17 +760,66 @@ class ImageViewer(QWidget):
             print(f"[DEBUG TIMER] Is paused: {self.is_paused}")
         
         
-    def switch_to_landscape_mode_with_image(self, image_path: str):
+    def switch_to_landscape_mode_with_image(self, image_path: str, source_slot_index: int = -1):
         """Switch to landscape mode and display the specified image"""
         if self.transition_in_progress or self.current_layout_mode == LayoutMode.LANDSCAPE:
             return
             
         self.transition_in_progress = True
+        self.landscape_source_slot_index = source_slot_index
         
-        # Stop all portrait timers
-        for timer in self.timers:
+        # Save portrait timer states before stopping them
+        self.portrait_timer_states = []
+        for i, timer in enumerate(self.timers):
+            remaining_time = timer.remainingTime() if timer.isActive() else 0
+            self.portrait_timer_states.append({
+                'index': i,
+                'remaining': max(remaining_time, 1000),  # Minimum 1 second
+                'was_active': timer.isActive(),
+                'current_image': self.current_images[i] if i < len(self.current_images) else ""
+            })
             timer.stop()
             
+        print(f"[DEBUG] Saved portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
+        
+        # Start progressive transition animation before switching layout
+        if source_slot_index >= 0 and source_slot_index < len(self.image_slots):
+            self.start_landscape_transition_animation(image_path, source_slot_index)
+        else:
+            # Fallback to immediate switch if source slot is invalid
+            self.complete_landscape_transition(image_path)
+            
+    def start_landscape_transition_animation(self, image_path: str, source_slot_index: int):
+        """Start progressive transition from portrait slot to landscape mode"""
+        # First, show the landscape image in the source slot
+        pixmap = self.load_image_for_display(image_path)
+        if pixmap:
+            self.image_slots[source_slot_index].show_image(image_path, pixmap, initial=False, fast_transition=True)
+        
+        # Create opacity effects for non-source slots
+        self.transition_opacity_effects = []
+        for i, slot in enumerate(self.image_slots):
+            if i != source_slot_index:
+                opacity_effect = QGraphicsOpacityEffect()
+                opacity_effect.setOpacity(1.0)
+                slot.setGraphicsEffect(opacity_effect)
+                self.transition_opacity_effects.append((i, opacity_effect))
+        
+        # Create fade out animation for non-source slots
+        self.fade_out_animations = QParallelAnimationGroup()
+        for i, opacity_effect in self.transition_opacity_effects:
+            fade_anim = QPropertyAnimation(opacity_effect, b"opacity")
+            fade_anim.setDuration(800)  # 800ms fade out
+            fade_anim.setStartValue(1.0)
+            fade_anim.setEndValue(0.1)  # Fade to 10% opacity instead of completely hiding
+            self.fade_out_animations.addAnimation(fade_anim)
+        
+        # Connect animation completion to layout switch
+        self.fade_out_animations.finished.connect(lambda: self.complete_landscape_transition(image_path))
+        self.fade_out_animations.start()
+        
+    def complete_landscape_transition(self, image_path: str):
+        """Complete the transition to landscape mode"""
         # Switch layout
         self.current_layout_mode = LayoutMode.LANDSCAPE
         self.stacked_layout.setCurrentWidget(self.landscape_widget)
@@ -861,8 +914,28 @@ class ImageViewer(QWidget):
         # Stop landscape timer
         self.landscape_timer.stop()
         
-        # TODO: Add fade out animation here
+        # Start progressive transition animation from landscape to portrait
+        self.start_portrait_transition_animation()
         
+    def start_portrait_transition_animation(self):
+        """Start progressive transition from landscape to portrait mode"""
+        # Create fade out effect for landscape widget
+        self.landscape_fade_effect = QGraphicsOpacityEffect()
+        self.landscape_fade_effect.setOpacity(1.0)
+        self.landscape_widget.setGraphicsEffect(self.landscape_fade_effect)
+        
+        # Create fade out animation for landscape
+        self.landscape_fade_animation = QPropertyAnimation(self.landscape_fade_effect, b"opacity")
+        self.landscape_fade_animation.setDuration(600)  # 600ms fade out
+        self.landscape_fade_animation.setStartValue(1.0)
+        self.landscape_fade_animation.setEndValue(0.0)
+        
+        # Connect animation completion to layout switch
+        self.landscape_fade_animation.finished.connect(self.complete_portrait_transition)
+        self.landscape_fade_animation.start()
+        
+    def complete_portrait_transition(self):
+        """Complete the transition to portrait mode"""
         # Switch layout
         self.current_layout_mode = LayoutMode.PORTRAIT
         self.stacked_layout.setCurrentWidget(self.portrait_widget)
@@ -870,10 +943,64 @@ class ImageViewer(QWidget):
         # Calculate portrait dimensions
         self.calculate_slot_dimensions()
         
-        # Restart portrait timers
-        for i in range(len(self.timers)):
-            interval = self.get_random_portrait_interval()
-            self.timers[i].start(interval)
+        # Remove fade effect from landscape widget
+        self.landscape_widget.setGraphicsEffect(None)
+        
+        # Clear any existing opacity effects on portrait slots
+        for slot in self.image_slots:
+            slot.setGraphicsEffect(None)
+        
+        # Create fade-in animation for portrait slots with staggered timing
+        self.portrait_fade_effects = []
+        self.portrait_fade_animations = QSequentialAnimationGroup()
+        
+        for i, slot in enumerate(self.image_slots):
+            # Create opacity effect
+            fade_effect = QGraphicsOpacityEffect()
+            fade_effect.setOpacity(0.0)  # Start invisible
+            slot.setGraphicsEffect(fade_effect)
+            self.portrait_fade_effects.append(fade_effect)
+            
+            # Create fade-in animation
+            fade_anim = QPropertyAnimation(fade_effect, b"opacity")
+            fade_anim.setDuration(400)  # Shorter duration since they're sequential
+            fade_anim.setStartValue(0.0)
+            fade_anim.setEndValue(1.0)
+            self.portrait_fade_animations.addAnimation(fade_anim)
+        
+        # Connect completion to final setup
+        self.portrait_fade_animations.finished.connect(self.finalize_portrait_transition)
+        self.portrait_fade_animations.start()
+        
+    def finalize_portrait_transition(self):
+        """Finalize portrait mode transition and restore timer states"""
+        # Clear fade effects
+        for slot in self.image_slots:
+            slot.setGraphicsEffect(None)
+        
+        # Restore portrait timer states if available, otherwise use new random intervals
+        if self.portrait_timer_states and len(self.portrait_timer_states) == len(self.timers):
+            print(f"[DEBUG] Restoring portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
+            for state in self.portrait_timer_states:
+                i = state['index']
+                if i < len(self.timers) and state['was_active']:
+                    # Use the saved remaining time, but ensure it's reasonable
+                    remaining = max(state['remaining'], 1000)  # At least 1 second
+                    self.timers[i].start(remaining)
+                    print(f"[DEBUG] Restored timer {i} with {remaining}ms remaining")
+                elif i < len(self.timers):
+                    # Timer wasn't active, start with new random interval
+                    interval = self.get_random_portrait_interval()
+                    self.timers[i].start(interval)
+                    print(f"[DEBUG] Started new timer {i} with {interval}ms")
+            # Clear saved states
+            self.portrait_timer_states = []
+        else:
+            # No saved states or mismatch, use new random intervals
+            print("[DEBUG] No saved timer states, using new random intervals")
+            for i in range(len(self.timers)):
+                interval = self.get_random_portrait_interval()
+                self.timers[i].start(interval)
             
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
