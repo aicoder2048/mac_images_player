@@ -1,4 +1,4 @@
-# QiQi Player
+# Mac Images Player
 
 一款精美的 macOS 图片幻灯片播放器，支持背景音乐，基于 PyQt6 构建。
 
@@ -71,8 +71,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ### 克隆和设置
 ```bash
 # 克隆仓库
-git clone <repository-url>
-cd Player
+git clone https://github.com/aicoder2048/mac_images_player.git
+cd mac_images_player
 
 # 使用 uv 安装依赖
 uv sync
@@ -107,7 +107,7 @@ uv run python main.py
 
 ## 项目结构
 ```
-Player/
+mac_images_player/
 ├── main.py              # 入口文件
 ├── src/
 │   ├── config_dialog.py # 初始配置对话框

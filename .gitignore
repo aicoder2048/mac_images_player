@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Claude Code Memory
+CLAUDE.md
+
 # Project specific
 images/
 music/

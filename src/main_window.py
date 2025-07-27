@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
         self.setup_music()
         
     def init_ui(self):
-        self.setWindowTitle("Image Player")
+        self.setWindowTitle("Mac Images Player")
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #141414;

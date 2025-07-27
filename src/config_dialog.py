@@ -57,7 +57,7 @@ class ConfigDialog(QDialog):
         self.music_history = self.load_history('music_history')
         
     def init_ui(self):
-        self.setWindowTitle("Image Player Configuration")
+        self.setWindowTitle("Mac Images Player Configuration")
         self.setFixedSize(650, 550)
         
         layout = QVBoxLayout()
