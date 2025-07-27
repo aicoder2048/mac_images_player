@@ -58,7 +58,7 @@ class ConfigDialog(QDialog):
         
     def init_ui(self):
         self.setWindowTitle("Mac Images Player Configuration")
-        self.setFixedSize(650, 550)
+        self.setFixedSize(650, 650)
         
         layout = QVBoxLayout()
         
@@ -135,16 +135,64 @@ class ConfigDialog(QDialog):
         music_layout.addLayout(music_path_layout)
         music_group.setLayout(music_layout)
         
-        # Image count selection
+        # Image count and timing selection
         count_group = QGroupBox("Display Settings")
-        count_layout = QHBoxLayout()
-        count_layout.addWidget(QLabel("Images per screen:"))
+        count_layout = QVBoxLayout()
+        
+        # Images per screen row
+        images_row = QHBoxLayout()
+        images_row.addWidget(QLabel("Images per screen:"))
         self.count_combo = QComboBox()
         self.count_combo.addItems(["2", "3", "4"])
         self.count_combo.setCurrentText("3")
         self.count_combo.currentTextChanged.connect(self.on_count_changed)
-        count_layout.addWidget(self.count_combo)
-        count_layout.addStretch()
+        images_row.addWidget(self.count_combo)
+        images_row.addStretch()
+        count_layout.addLayout(images_row)
+        
+        # Timing options
+        timing_label = QLabel("Image Change Timing:")
+        timing_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        count_layout.addWidget(timing_label)
+        
+        # Portrait timing row
+        portrait_row = QHBoxLayout()
+        portrait_row.addWidget(QLabel("Portrait (tall) images:"))
+        self.portrait_timing_combo = QComboBox()
+        self.portrait_timing_combo.addItems([
+            "2-4 seconds",
+            "3-5 seconds", 
+            "4-6 seconds",
+            "5-7 seconds",
+            "6-8 seconds"
+        ])
+        # Load saved preference or set default (3-5 seconds)
+        saved_portrait_timing = self.settings.value('portrait_timing', '3-5 seconds')
+        self.portrait_timing_combo.setCurrentText(saved_portrait_timing)
+        self.portrait_timing_combo.currentTextChanged.connect(self.on_portrait_timing_changed)
+        portrait_row.addWidget(self.portrait_timing_combo)
+        portrait_row.addStretch()
+        count_layout.addLayout(portrait_row)
+        
+        # Landscape timing row  
+        landscape_row = QHBoxLayout()
+        landscape_row.addWidget(QLabel("Landscape (wide) images:"))
+        self.landscape_timing_combo = QComboBox()
+        self.landscape_timing_combo.addItems([
+            "2-4 seconds",
+            "3-5 seconds",
+            "4-6 seconds", 
+            "5-7 seconds",
+            "6-8 seconds"
+        ])
+        # Load saved preference or set default (2-4 seconds)
+        saved_landscape_timing = self.settings.value('landscape_timing', '2-4 seconds')
+        self.landscape_timing_combo.setCurrentText(saved_landscape_timing)
+        self.landscape_timing_combo.currentTextChanged.connect(self.on_landscape_timing_changed)
+        landscape_row.addWidget(self.landscape_timing_combo)
+        landscape_row.addStretch()
+        count_layout.addLayout(landscape_row)
+        
         count_group.setLayout(count_layout)
         
         # Buttons
@@ -268,6 +316,14 @@ class ConfigDialog(QDialog):
     def on_count_changed(self, text):
         self.image_count = int(text)
         
+    def on_portrait_timing_changed(self, text):
+        """Handle portrait timing change"""
+        self.settings.setValue('portrait_timing', text)
+        
+    def on_landscape_timing_changed(self, text):
+        """Handle landscape timing change"""
+        self.settings.setValue('landscape_timing', text)
+        
     def validate_start_button(self):
         # Enable start button only if at least one directory is selected
         checked_dirs = self.get_checked_directories()
@@ -329,7 +385,9 @@ class ConfigDialog(QDialog):
         return {
             'images_dirs': self.get_checked_directories(),  # Changed to multiple dirs
             'music_file': self.music_file,
-            'image_count': self.image_count
+            'image_count': self.image_count,
+            'portrait_timing': self.portrait_timing_combo.currentText(),
+            'landscape_timing': self.landscape_timing_combo.currentText()
         }
         
     def load_history(self, key):

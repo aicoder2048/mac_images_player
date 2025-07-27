@@ -330,6 +330,10 @@ class ImageViewer(QWidget):
             # Fallback for old config format
             self.image_files = get_image_files(config.get('images_dir', ''))
         self.image_count = config['image_count']
+        
+        # Store timing configurations with defaults
+        self.portrait_timing = config.get('portrait_timing', '3-5 seconds')
+        self.landscape_timing = config.get('landscape_timing', '2-4 seconds')
         self.image_slots: List[ImageSlot] = []
         self.timers: List[QTimer] = []
         self.current_images: List[str] = [""] * self.image_count
@@ -361,6 +365,35 @@ class ImageViewer(QWidget):
         self.last_landscape_change_time = 0  # Track time between changes
         
         self.init_ui()
+        
+    def parse_timing_range(self, timing_string: str) -> Tuple[int, int]:
+        """Parse timing string to millisecond range tuple"""
+        timing_map = {
+            "2-4 seconds": (2000, 4000),
+            "3-5 seconds": (3000, 5000), 
+            "4-6 seconds": (4000, 6000),
+            "5-7 seconds": (5000, 7000),
+            "6-8 seconds": (6000, 8000)
+        }
+        return timing_map.get(timing_string, (3000, 5000))  # Default fallback
+        
+    def get_portrait_timing_range(self) -> Tuple[int, int]:
+        """Get portrait timing range in milliseconds"""
+        return self.parse_timing_range(self.portrait_timing)
+        
+    def get_landscape_timing_range(self) -> Tuple[int, int]:
+        """Get landscape timing range in milliseconds"""
+        return self.parse_timing_range(self.landscape_timing)
+        
+    def get_random_portrait_interval(self) -> int:
+        """Get random interval for portrait mode"""
+        min_ms, max_ms = self.get_portrait_timing_range()
+        return random.randint(min_ms, max_ms)
+        
+    def get_random_landscape_interval(self) -> int:
+        """Get random interval for landscape mode"""
+        min_ms, max_ms = self.get_landscape_timing_range()
+        return random.randint(min_ms, max_ms)
         
     def init_ui(self):
         # Set background color
@@ -457,8 +490,8 @@ class ImageViewer(QWidget):
                 # First timer starts with 2 second interval
                 self.timers[0].start(2000)
             else:
-                # Other timers start with random 3-5 second intervals
-                interval = random.randint(3000, 5000)
+                # Other timers start with random portrait intervals
+                interval = self.get_random_portrait_interval()
                 self.timers[i].start(interval)
             
     def calculate_slot_dimensions(self):
@@ -498,8 +531,8 @@ class ImageViewer(QWidget):
             
     def start_timer(self, index: int):
         """Start timer for specific slot"""
-        # Simple random interval between 3-5 seconds
-        interval = random.randint(3000, 5000)
+        # Use portrait timing for individual slots
+        interval = self.get_random_portrait_interval()
         self.timers[index].start(interval)
         
     def stop(self):
@@ -532,10 +565,10 @@ class ImageViewer(QWidget):
             # Restart timers based on current mode
             if self.current_layout_mode == LayoutMode.PORTRAIT:
                 for i in range(len(self.timers)):
-                    interval = random.randint(3000, 5000)
+                    interval = self.get_random_portrait_interval()
                     self.timers[i].start(interval)
             else:
-                interval = random.randint(3000, 5000)
+                interval = self.get_random_landscape_interval()
                 self.landscape_timer.start(interval)
                 
     def position_pause_label(self):
@@ -561,7 +594,7 @@ class ImageViewer(QWidget):
         if self.image_slots[index].is_pinned:
             # Keep the timer running but don't change the image
             self.timers[index].stop()
-            self.timers[index].start(random.randint(3000, 5000))
+            self.timers[index].start(self.get_random_portrait_interval())
             return
             
         # Get available images from ALL images (not just portrait)
@@ -592,7 +625,7 @@ class ImageViewer(QWidget):
                 
         # Reset timer with new random interval
         self.timers[index].stop()
-        interval = random.randint(3000, 5000)
+        interval = self.get_random_portrait_interval()
         self.timers[index].start(interval)
         
     def resizeEvent(self, event):
@@ -667,7 +700,7 @@ class ImageViewer(QWidget):
             print("[DEBUG] Landscape image is pinned, staying in landscape mode")
             # Restart timer to check again later
             self.landscape_timer.setSingleShot(True)
-            interval = random.randint(3000, 5000)
+            interval = self.get_random_landscape_interval()
             print(f"[DEBUG] Restarting timer with interval: {interval}ms")
             self.landscape_timer.start(interval)
             return
@@ -706,7 +739,7 @@ class ImageViewer(QWidget):
                 
         # Continue with another timer cycle
         self.landscape_timer.setSingleShot(True)
-        interval = random.randint(3000, 5000)
+        interval = self.get_random_landscape_interval()
         print(f"[DEBUG] Setting next landscape timer interval: {interval}ms")
         self.landscape_timer.start(interval)
             
@@ -759,7 +792,7 @@ class ImageViewer(QWidget):
             pass  # No connections to disconnect
         self.landscape_timer.timeout.connect(self.change_landscape_image)
         self.landscape_timer.setSingleShot(True)  # Single shot - only fire once
-        interval = random.randint(3000, 5000)
+        interval = self.get_random_landscape_interval()
         self.landscape_timer.start(interval)
         
         # Start cooldown
@@ -808,7 +841,7 @@ class ImageViewer(QWidget):
             pass  # No connections to disconnect
         self.landscape_timer.timeout.connect(self.change_landscape_image)
         self.landscape_timer.setSingleShot(True)  # Single shot - only fire once
-        interval = random.randint(3000, 5000)
+        interval = self.get_random_landscape_interval()
         print(f"[DEBUG] Starting landscape timer with interval: {interval}ms (will switch to portrait after)")
         self.landscape_timer.start(interval)
         print(f"[DEBUG] Timer started successfully: {self.landscape_timer.isActive()}, single shot: {self.landscape_timer.isSingleShot()}")
@@ -839,7 +872,7 @@ class ImageViewer(QWidget):
         
         # Restart portrait timers
         for i in range(len(self.timers)):
-            interval = random.randint(3000, 5000)
+            interval = self.get_random_portrait_interval()
             self.timers[i].start(interval)
             
         # Start cooldown
