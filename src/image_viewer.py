@@ -968,6 +968,9 @@ class ImageViewer(QWidget):
                 interval = self.get_random_portrait_interval()
                 self.timers[i].start(interval)
         
+        # Clear transition flag first so new landscape images can be detected
+        self.transition_in_progress = False
+        
         # Update the slot that triggered landscape mode
         if self.landscape_source_slot_index >= 0 and self.landscape_source_slot_index < len(self.image_slots):
             print(f"[DEBUG] Updating source slot {self.landscape_source_slot_index} that triggered landscape mode")
@@ -978,5 +981,3 @@ class ImageViewer(QWidget):
             
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
-        
-        self.transition_in_progress = False
