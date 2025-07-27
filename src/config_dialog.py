@@ -67,12 +67,13 @@ class ConfigDialog(QDialog):
         layout = QVBoxLayout()
         
         # Images directories selection
-        images_group = QGroupBox(tr('image_directories'))
+        self.images_group = QGroupBox(tr('image_directories'))
         images_layout = QVBoxLayout()
         
         # History dropdown for quick selection
         history_layout = QHBoxLayout()
-        history_layout.addWidget(QLabel(tr('recent')))
+        self.recent_label = QLabel(tr('recent'))
+        history_layout.addWidget(self.recent_label)
         self.history_combo = QComboBox()
         self.history_combo.setEditable(False)
         self.update_history_combo()
@@ -101,10 +102,10 @@ class ConfigDialog(QDialog):
         buttons_layout.addStretch()
         
         images_layout.addLayout(buttons_layout)
-        images_group.setLayout(images_layout)
+        self.images_group.setLayout(images_layout)
         
         # Music file selection
-        music_group = QGroupBox(tr('background_music'))
+        self.music_group = QGroupBox(tr('background_music'))
         music_layout = QVBoxLayout()
         
         # Dropdown for history
@@ -137,15 +138,16 @@ class ConfigDialog(QDialog):
         
         music_layout.addWidget(self.music_combo)
         music_layout.addLayout(music_path_layout)
-        music_group.setLayout(music_layout)
+        self.music_group.setLayout(music_layout)
         
         # Image count and timing selection
-        count_group = QGroupBox(tr('display_settings'))
+        self.count_group = QGroupBox(tr('display_settings'))
         count_layout = QVBoxLayout()
         
         # Images per screen row
         images_row = QHBoxLayout()
-        images_row.addWidget(QLabel(tr('images_per_screen')))
+        self.images_per_screen_label = QLabel(tr('images_per_screen'))
+        images_row.addWidget(self.images_per_screen_label)
         self.count_combo = QComboBox()
         self.count_combo.addItems(["2", "3", "4"])
         self.count_combo.setCurrentText("3")
@@ -161,7 +163,8 @@ class ConfigDialog(QDialog):
         
         # Portrait timing row
         portrait_row = QHBoxLayout()
-        portrait_row.addWidget(QLabel(tr('portrait_images')))
+        self.portrait_images_label = QLabel(tr('portrait_images'))
+        portrait_row.addWidget(self.portrait_images_label)
         self.portrait_timing_combo = QComboBox()
         self.portrait_timing_combo.addItems([
             "2-4 seconds",
@@ -180,7 +183,8 @@ class ConfigDialog(QDialog):
         
         # Landscape timing row  
         landscape_row = QHBoxLayout()
-        landscape_row.addWidget(QLabel(tr('landscape_images')))
+        self.landscape_images_label = QLabel(tr('landscape_images'))
+        landscape_row.addWidget(self.landscape_images_label)
         self.landscape_timing_combo = QComboBox()
         self.landscape_timing_combo.addItems([
             "2-4 seconds",
@@ -228,7 +232,7 @@ class ConfigDialog(QDialog):
         lang_row.addStretch()
         count_layout.addLayout(lang_row)
         
-        count_group.setLayout(count_layout)
+        self.count_group.setLayout(count_layout)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -245,9 +249,9 @@ class ConfigDialog(QDialog):
         button_layout.addWidget(self.cancel_btn)
         
         # Add all to main layout
-        layout.addWidget(images_group)
-        layout.addWidget(music_group)
-        layout.addWidget(count_group)
+        layout.addWidget(self.images_group)
+        layout.addWidget(self.music_group)
+        layout.addWidget(self.count_group)
         layout.addStretch()
         layout.addLayout(button_layout)
         
@@ -366,12 +370,41 @@ class ConfigDialog(QDialog):
         else:  # Chinese
             set_language('zh')
         
-        # Show message that restart is recommended
-        QMessageBox.information(
-            self,
-            tr('language') if button_id == 0 else tr('language'),
-            "Language will change after restarting the configuration dialog.\n语言将在重新打开设置对话框后生效。"
-        )
+        # Update UI immediately
+        self.update_ui_language()
+        
+    def update_ui_language(self):
+        """Update all UI elements with new language"""
+        # Update window title
+        self.setWindowTitle(tr('config_title'))
+        
+        # Update group box titles
+        self.images_group.setTitle(tr('image_directories'))
+        self.music_group.setTitle(tr('background_music'))
+        self.count_group.setTitle(tr('display_settings'))
+        
+        # Update labels
+        self.recent_label.setText(tr('recent'))
+        self.images_per_screen_label.setText(tr('images_per_screen'))
+        self.portrait_images_label.setText(tr('portrait_images'))
+        self.landscape_images_label.setText(tr('landscape_images'))
+        
+        # Update buttons
+        self.add_dir_btn.setText(tr('add_directory'))
+        self.remove_dir_btn.setText(tr('remove'))
+        self.clear_dirs_btn.setText(tr('clear_all'))
+        self.music_browse_btn.setText(tr('browse'))
+        self.clear_history_btn.setText(tr('clear_history'))
+        self.start_btn.setText(tr('start'))
+        self.cancel_btn.setText(tr('cancel'))
+        
+        # Update radio buttons
+        self.english_radio.setText(tr('english'))
+        self.chinese_radio.setText(tr('chinese'))
+        
+        # Update combo box placeholder text
+        if self.music_combo.count() == 1 and self.music_combo.currentData() is None:
+            self.music_combo.setItemText(0, tr('no_history'))
         
     def validate_start_button(self):
         # Enable start button only if at least one directory is selected

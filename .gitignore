@@ -16,3 +16,6 @@ CLAUDE.md
 images/
 music/
 .DS_Store
+
+# Keep icons directory
+!icons/

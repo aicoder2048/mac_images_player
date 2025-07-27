@@ -83,18 +83,16 @@ class MainWindow(QMainWindow):
         # File menu
         file_menu = menubar.addMenu(tr('file'))
         
+        fullscreen_action = QAction(tr('toggle_fullscreen'), self)
+        fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        file_menu.addAction(fullscreen_action)
+        
+        file_menu.addSeparator()
+        
         exit_action = QAction(tr('exit'), self)
         exit_action.setShortcut('Ctrl+Q')
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-        
-        # View menu
-        view_menu = menubar.addMenu(tr('view'))
-        
-        fullscreen_action = QAction(tr('toggle_fullscreen'), self)
-        fullscreen_action.setShortcut('F11')
-        fullscreen_action.triggered.connect(self.toggle_fullscreen)
-        view_menu.addAction(fullscreen_action)
         
         # Fill menu
         fill_menu = menubar.addMenu(tr('fill'))
@@ -179,7 +177,7 @@ class MainWindow(QMainWindow):
             select_music_menu.addAction(no_history_action)
         
         # Language menu
-        language_menu = menubar.addMenu(tr('language') + '/语言')
+        language_menu = menubar.addMenu('Language/语言')
         
         # Create language action group
         self.lang_group = QActionGroup(self)
