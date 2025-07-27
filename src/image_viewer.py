@@ -885,6 +885,11 @@ class ImageViewer(QWidget):
         
     def start_portrait_transition_animation(self):
         """Start progressive transition from landscape to portrait mode"""
+        # First prepare portrait slots (make them ready but invisible)
+        for slot in self.image_slots:
+            slot.setGraphicsEffect(None)
+            slot.setVisible(True)
+        
         # Create fade out effect for landscape widget
         self.landscape_fade_effect = QGraphicsOpacityEffect()
         self.landscape_fade_effect.setOpacity(1.0)
@@ -892,14 +897,39 @@ class ImageViewer(QWidget):
         
         # Create fade out animation for landscape
         self.landscape_fade_animation = QPropertyAnimation(self.landscape_fade_effect, b"opacity")
-        self.landscape_fade_animation.setDuration(600)  # 600ms fade out
+        self.landscape_fade_animation.setDuration(300)  # Faster fade
         self.landscape_fade_animation.setStartValue(1.0)
-        self.landscape_fade_animation.setEndValue(0.0)
+        self.landscape_fade_animation.setEndValue(0.3)  # Keep 30% visible during transition
+        
+        # Start portrait fade-in immediately (overlapping with landscape fade-out)
+        QTimer.singleShot(100, self.start_portrait_fade_in)  # Start after 100ms
         
         # Connect animation completion to layout switch
         self.landscape_fade_animation.finished.connect(self.complete_portrait_transition)
         self.landscape_fade_animation.start()
         
+    def start_portrait_fade_in(self):
+        """Start fading in portrait slots while landscape is still partially visible"""
+        # Create fade-in animation for portrait slots
+        self.portrait_fade_effects = []
+        self.portrait_fade_animations = QParallelAnimationGroup()
+        
+        for i, slot in enumerate(self.image_slots):
+            # Create opacity effect
+            fade_effect = QGraphicsOpacityEffect()
+            fade_effect.setOpacity(0.0)  # Start invisible
+            slot.setGraphicsEffect(fade_effect)
+            self.portrait_fade_effects.append(fade_effect)
+            
+            # Create fade-in animation
+            fade_anim = QPropertyAnimation(fade_effect, b"opacity")
+            fade_anim.setDuration(400)  # Slightly longer for smooth blend
+            fade_anim.setStartValue(0.0)
+            fade_anim.setEndValue(1.0)
+            self.portrait_fade_animations.addAnimation(fade_anim)
+        
+        self.portrait_fade_animations.start()
+    
     def complete_portrait_transition(self):
         """Complete the transition to portrait mode"""
         # Switch layout
@@ -912,31 +942,12 @@ class ImageViewer(QWidget):
         # Remove fade effect from landscape widget
         self.landscape_widget.setGraphicsEffect(None)
         
-        # Clear any existing opacity effects on portrait slots
-        for slot in self.image_slots:
-            slot.setGraphicsEffect(None)
-        
-        # Create fade-in animation for portrait slots with staggered timing
-        self.portrait_fade_effects = []
-        self.portrait_fade_animations = QSequentialAnimationGroup()
-        
-        for i, slot in enumerate(self.image_slots):
-            # Create opacity effect
-            fade_effect = QGraphicsOpacityEffect()
-            fade_effect.setOpacity(0.0)  # Start invisible
-            slot.setGraphicsEffect(fade_effect)
-            self.portrait_fade_effects.append(fade_effect)
-            
-            # Create fade-in animation
-            fade_anim = QPropertyAnimation(fade_effect, b"opacity")
-            fade_anim.setDuration(400)  # Shorter duration since they're sequential
-            fade_anim.setStartValue(0.0)
-            fade_anim.setEndValue(1.0)
-            self.portrait_fade_animations.addAnimation(fade_anim)
-        
-        # Connect completion to final setup
-        self.portrait_fade_animations.finished.connect(self.finalize_portrait_transition)
-        self.portrait_fade_animations.start()
+        # Connect completion to final setup if animations exist
+        if hasattr(self, 'portrait_fade_animations') and self.portrait_fade_animations:
+            self.portrait_fade_animations.finished.connect(self.finalize_portrait_transition)
+        else:
+            # Fallback if animations weren't started
+            self.finalize_portrait_transition()
         
     def finalize_portrait_transition(self):
         """Finalize portrait mode transition and restore timer states"""
