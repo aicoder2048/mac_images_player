@@ -5,6 +5,8 @@ from typing import List, Optional, Tuple
 from enum import Enum
 import sys
 import random
+import time
+import os
 from functools import partial
 from PIL import Image
 sys.path.append('..')
@@ -210,9 +212,13 @@ class ImageSlot(QFrame):
         
         self.setLayout(layout)
         
-    def show_image(self, image_path: str, pixmap: QPixmap, initial=False):
+    def show_image(self, image_path: str, pixmap: QPixmap, initial=False, fast_transition=False):
         """Display new image with optional transition"""
-        if not pixmap or self.is_transitioning:
+        if not pixmap:
+            return
+            
+        if self.is_transitioning:
+            print(f"[DEBUG] Image dropped during transition: {os.path.basename(image_path)}")
             return
             
         self.current_image_path = image_path
@@ -224,6 +230,7 @@ class ImageSlot(QFrame):
         else:
             # Animate transition with random effect
             self.is_transitioning = True
+            self.fast_transition = fast_transition
             effect_type = random.choice(['fade', 'fade_rotate'])
             
             if effect_type == 'fade':
@@ -239,14 +246,17 @@ class ImageSlot(QFrame):
         self.next_label.resize(self.current_label.size())
         self.next_label.show()
         
+        # Use faster animation for landscape mode
+        duration = 400 if hasattr(self, 'fast_transition') and self.fast_transition else 800
+        
         # Create fade animations
         fade_out = QPropertyAnimation(self.current_opacity, b"opacity")
-        fade_out.setDuration(800)
+        fade_out.setDuration(duration)
         fade_out.setStartValue(1.0)
         fade_out.setEndValue(0.0)
         
         fade_in = QPropertyAnimation(self.next_opacity, b"opacity")
-        fade_in.setDuration(800)
+        fade_in.setDuration(duration)
         fade_in.setStartValue(0.0)
         fade_in.setEndValue(1.0)
         
@@ -346,6 +356,9 @@ class ImageViewer(QWidget):
         self.landscape_timer: Optional[QTimer] = None
         self.landscape_width = 0
         self.landscape_height = 0
+        self.landscape_image_count = 0  # Track how many landscape images shown
+        self.landscape_start_time = 0  # Track when landscape mode started
+        self.last_landscape_change_time = 0  # Track time between changes
         
         self.init_ui()
         
@@ -392,7 +405,7 @@ class ImageViewer(QWidget):
         
         # Create timer for landscape slot
         self.landscape_timer = QTimer()
-        self.landscape_timer.timeout.connect(self.change_landscape_image)
+        # Don't connect anything initially - will be connected when entering landscape mode
         
         self.landscape_widget.setLayout(landscape_layout)
         
@@ -522,7 +535,8 @@ class ImageViewer(QWidget):
                     interval = random.randint(3000, 5000)
                     self.timers[i].start(interval)
             else:
-                self.landscape_timer.start(6000)
+                interval = random.randint(3000, 5000)
+                self.landscape_timer.start(interval)
                 
     def position_pause_label(self):
         """Position pause label in center of viewer"""
@@ -634,34 +648,38 @@ class ImageViewer(QWidget):
             self.landscape_slot.set_pinned(not self.landscape_slot.is_pinned)
             
     def change_landscape_image(self):
-        """Change image in landscape mode"""
-        if not self.landscape_images:
-            # No landscape images, switch back to portrait
-            self.switch_to_portrait_mode()
+        """Change image in landscape mode - immediately switch back to portrait after timer expires"""
+        current_time = time.time()
+        if self.last_landscape_change_time > 0:
+            time_since_last = current_time - self.last_landscape_change_time
+            print(f"[DEBUG] Landscape timer expired at {current_time:.2f}, {time_since_last:.2f}s since image shown")
+        
+        # Check if landscape image is pinned
+        if self.landscape_slot.is_pinned:
+            print("[DEBUG] Landscape image is pinned, staying in landscape mode")
+            # Restart timer to check again later
+            self.landscape_timer.setSingleShot(True)
+            interval = random.randint(3000, 5000)
+            print(f"[DEBUG] Restarting timer with interval: {interval}ms")
+            self.landscape_timer.start(interval)
             return
-            
-        # Get a random landscape image
-        available = [img for img in self.landscape_images if img != self.landscape_slot.current_image_path]
-        if not available:
-            available = self.landscape_images
-            
-        if available:
-            new_image = random.choice(available)
-            pixmap = self.load_landscape_image(new_image)
-            if pixmap:
-                self.landscape_slot.show_image(new_image, pixmap, initial=False)
-                
-        # After showing landscape image, plan to switch back to portrait
-        if not self.landscape_slot.is_pinned:
-            # Set timer to switch back after this image
-            self.landscape_timer.stop()
-            self.landscape_timer.timeout.disconnect()
-            self.landscape_timer.timeout.connect(self.switch_to_portrait_mode)
-            self.landscape_timer.start(6000)  # Show landscape for 6 seconds
+        
+        # We've already shown one landscape image when entering landscape mode
+        # Now it's time to switch back to portrait
+        print("[DEBUG] Switching back to portrait mode after showing landscape image")
+        self.switch_to_portrait_mode()
             
     def load_landscape_image(self, image_path: str) -> Optional[QPixmap]:
         """Load and scale landscape image"""
         return load_and_scale_image(image_path, (self.landscape_width, self.landscape_height), maintain_aspect=True)
+        
+    def debug_timer_status(self):
+        """Debug timer status"""
+        if hasattr(self, 'landscape_timer'):
+            print(f"[DEBUG TIMER] Landscape timer active: {self.landscape_timer.isActive()}")
+            print(f"[DEBUG TIMER] Landscape timer interval: {self.landscape_timer.interval()}")
+            print(f"[DEBUG TIMER] Current layout mode: {self.current_layout_mode}")
+            print(f"[DEBUG TIMER] Is paused: {self.is_paused}")
         
     def should_switch_to_landscape(self) -> bool:
         """Decide if we should switch to landscape mode"""
@@ -681,7 +699,9 @@ class ImageViewer(QWidget):
         
     def switch_to_landscape_mode(self):
         """Switch from portrait to landscape mode"""
+        print(f"[DEBUG] switch_to_landscape_mode called at {time.time():.2f}")
         if self.transition_in_progress or self.current_layout_mode == LayoutMode.LANDSCAPE:
+            print(f"[DEBUG] Cannot switch: transition={self.transition_in_progress}, mode={self.current_layout_mode}")
             return
             
         self.transition_in_progress = True
@@ -699,17 +719,32 @@ class ImageViewer(QWidget):
         # Calculate landscape dimensions
         self.calculate_slot_dimensions()
         
+        # Reset landscape tracking
+        self.landscape_image_count = 0
+        self.landscape_start_time = time.time()
+        self.last_landscape_change_time = self.landscape_start_time
+        print(f"[DEBUG] Landscape mode started at {self.landscape_start_time:.2f}")
+        
         # Load and display a landscape image
         if self.landscape_images:
             image_path = random.choice(self.landscape_images)
+            print(f"[DEBUG] Initial landscape image: {os.path.basename(image_path)}")
             pixmap = self.load_landscape_image(image_path)
             if pixmap:
                 self.landscape_slot.show_image(image_path, pixmap, initial=True)
+                self.landscape_image_count = 1
                 
-        # Start landscape timer
-        self.landscape_timer.timeout.disconnect()
+        # Start a single-shot timer to switch back to portrait after showing this landscape image
+        try:
+            self.landscape_timer.timeout.disconnect()
+        except:
+            pass  # No connections to disconnect
         self.landscape_timer.timeout.connect(self.change_landscape_image)
-        self.landscape_timer.start(6000)  # Landscape images show for 6 seconds
+        self.landscape_timer.setSingleShot(True)  # Single shot - only fire once
+        interval = random.randint(3000, 5000)
+        print(f"[DEBUG] Starting landscape timer with interval: {interval}ms (will switch to portrait after)")
+        self.landscape_timer.start(interval)
+        print(f"[DEBUG] Timer started successfully: {self.landscape_timer.isActive()}, single shot: {self.landscape_timer.isSingleShot()}")
         
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)

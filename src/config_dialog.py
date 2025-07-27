@@ -80,7 +80,6 @@ class ConfigDialog(QDialog):
         self.dirs_list = QListWidget()
         self.dirs_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.dirs_list.itemChanged.connect(self.on_item_changed)  # Handle checkbox changes
-        self.update_dirs_list()
         images_layout.addWidget(self.dirs_list)
         
         # Buttons for directory management
@@ -171,6 +170,9 @@ class ConfigDialog(QDialog):
         
         self.setLayout(layout)
         
+        # Now that all widgets are created, update the lists
+        self.update_dirs_list()
+        
         # Validate start button if default directories exist
         self.validate_start_button()
         
@@ -195,7 +197,9 @@ class ConfigDialog(QDialog):
             item = QListWidgetItem(dir_path)
             item.setCheckState(Qt.CheckState.Checked)
             self.dirs_list.addItem(item)
-        self.validate_start_button()
+        # Only validate if start button exists
+        if hasattr(self, 'start_btn'):
+            self.validate_start_button()
         
     def add_directory(self):
         """Add a new directory to the list"""
@@ -209,11 +213,17 @@ class ConfigDialog(QDialog):
             
     def remove_directory(self):
         """Remove selected directory from the list"""
-        current_item = self.dirs_list.currentItem()
-        if current_item:
-            dir_path = current_item.text()
-            self.images_dirs.remove(dir_path)
+        current_row = self.dirs_list.currentRow()
+        if current_row >= 0 and current_row < len(self.images_dirs):
+            # Remove from our list
+            self.images_dirs.pop(current_row)
+            # Update the UI
             self.update_dirs_list()
+            # Select the next appropriate item
+            if self.images_dirs:
+                # If there are still items, select the same row or the last one
+                new_row = min(current_row, len(self.images_dirs) - 1)
+                self.dirs_list.setCurrentRow(new_row)
             
     def clear_directories(self):
         """Clear all directories"""
