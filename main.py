@@ -2,11 +2,15 @@ import sys
 from PyQt6.QtWidgets import QApplication
 from src.config_dialog import ConfigDialog
 from src.main_window import MainWindow
+from src.translations import init_language
 
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Reel 77")
+    
+    # Initialize language system
+    init_language()
     
     # Show configuration dialog
     config_dialog = ConfigDialog()

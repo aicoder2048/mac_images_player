@@ -3,6 +3,7 @@ from PyQt6.QtCore import Qt, QTimer, QSettings
 from PyQt6.QtGui import QAction, QKeySequence, QActionGroup
 from src.image_viewer import ImageViewer, DisplayMode
 from src.music_player import MusicPlayer
+from src.translations import tr, init_language, get_language, set_language
 import os
 import json
 
@@ -10,6 +11,9 @@ import json
 class MainWindow(QMainWindow):
     def __init__(self, config: dict):
         super().__init__()
+        # Initialize language system
+        init_language()
+        
         self.config = config
         self.music_player = MusicPlayer()
         self.settings = QSettings('Reel77', 'Config')
@@ -77,23 +81,23 @@ class MainWindow(QMainWindow):
         """)
         
         # File menu
-        file_menu = menubar.addMenu('File')
+        file_menu = menubar.addMenu(tr('file'))
         
-        exit_action = QAction('Exit', self)
+        exit_action = QAction(tr('exit'), self)
         exit_action.setShortcut('Ctrl+Q')
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
         # View menu
-        view_menu = menubar.addMenu('View')
+        view_menu = menubar.addMenu(tr('view'))
         
-        fullscreen_action = QAction('Toggle Fullscreen', self)
+        fullscreen_action = QAction(tr('toggle_fullscreen'), self)
         fullscreen_action.setShortcut('F11')
         fullscreen_action.triggered.connect(self.toggle_fullscreen)
         view_menu.addAction(fullscreen_action)
         
         # Fill menu
-        fill_menu = menubar.addMenu('Fill')
+        fill_menu = menubar.addMenu(tr('fill'))
         
         # Create action group for mutually exclusive selection
         self.display_mode_group = QActionGroup(self)
@@ -108,7 +112,7 @@ class MainWindow(QMainWindow):
                 break
         
         # Create actions for each display mode
-        blur_fill_action = QAction('Blur Fill', self)
+        blur_fill_action = QAction(tr('blur_fill'), self)
         blur_fill_action.setCheckable(True)
         blur_fill_action.setChecked(saved_mode == DisplayMode.BLUR_FILL)
         blur_fill_action.setData(DisplayMode.BLUR_FILL)
@@ -116,7 +120,7 @@ class MainWindow(QMainWindow):
         self.display_mode_group.addAction(blur_fill_action)
         fill_menu.addAction(blur_fill_action)
         
-        fit_action = QAction('Fit', self)
+        fit_action = QAction(tr('fit'), self)
         fit_action.setCheckable(True)
         fit_action.setChecked(saved_mode == DisplayMode.FIT)
         fit_action.setData(DisplayMode.FIT)
@@ -124,7 +128,7 @@ class MainWindow(QMainWindow):
         self.display_mode_group.addAction(fit_action)
         fill_menu.addAction(fit_action)
         
-        zoom_fill_action = QAction('Zoom Fill', self)
+        zoom_fill_action = QAction(tr('zoom_fill'), self)
         zoom_fill_action.setCheckable(True)
         zoom_fill_action.setChecked(saved_mode == DisplayMode.ZOOM_FILL)
         zoom_fill_action.setData(DisplayMode.ZOOM_FILL)
@@ -136,9 +140,9 @@ class MainWindow(QMainWindow):
         self.image_viewer.set_display_mode(saved_mode)
         
         # Music menu
-        music_menu = menubar.addMenu('Music')
+        music_menu = menubar.addMenu(tr('music'))
         
-        play_pause_action = QAction('Play/Pause', self)
+        play_pause_action = QAction(tr('play_pause'), self)
         play_pause_action.setShortcut('Space')
         play_pause_action.triggered.connect(self.toggle_display)
         music_menu.addAction(play_pause_action)
@@ -147,7 +151,7 @@ class MainWindow(QMainWindow):
         music_menu.addSeparator()
         
         # Add music selection submenu
-        select_music_menu = QMenu('Select Music', self)
+        select_music_menu = QMenu(tr('select_music'), self)
         select_music_action = music_menu.addMenu(select_music_menu)
         
         # Remove the separate action that was causing the issue
@@ -173,6 +177,27 @@ class MainWindow(QMainWindow):
             no_history_action = QAction('No music history', self)
             no_history_action.setEnabled(False)
             select_music_menu.addAction(no_history_action)
+        
+        # Language menu
+        language_menu = menubar.addMenu(tr('language') + '/语言')
+        
+        # Create language action group
+        self.lang_group = QActionGroup(self)
+        self.lang_group.setExclusive(True)
+        
+        english_action = QAction(tr('english'), self)
+        english_action.setCheckable(True)
+        english_action.setChecked(get_language() == 'en')
+        english_action.triggered.connect(lambda: self.change_language('en'))
+        self.lang_group.addAction(english_action)
+        language_menu.addAction(english_action)
+        
+        chinese_action = QAction(tr('chinese'), self)
+        chinese_action.setCheckable(True)
+        chinese_action.setChecked(get_language() == 'zh')
+        chinese_action.triggered.connect(lambda: self.change_language('zh'))
+        self.lang_group.addAction(chinese_action)
+        language_menu.addAction(chinese_action)
             
     def setup_shortcuts(self):
         """Set up keyboard shortcuts"""
@@ -265,3 +290,9 @@ class MainWindow(QMainWindow):
         self.image_viewer.set_display_mode(mode)
         # Save the display mode preference
         self.settings.setValue('display_mode', mode.value)
+        
+    def change_language(self, lang_code):
+        """Change the application language"""
+        set_language(lang_code)
+        # Recreate menu bar with new language
+        self.create_menu_bar()

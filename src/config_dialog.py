@@ -1,15 +1,19 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QLineEdit, QComboBox, QFileDialog,
                              QGroupBox, QMessageBox, QListWidget, QListWidgetItem,
-                             QAbstractItemView)
+                             QAbstractItemView, QButtonGroup, QRadioButton)
 from PyQt6.QtCore import Qt, QSettings
 import os
 import json
+from .translations import tr, format_tr, init_language, get_language, set_language
 
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Initialize language system
+        init_language()
+        
         # Initialize settings
         self.settings = QSettings('Reel77', 'Config')
         
@@ -57,18 +61,18 @@ class ConfigDialog(QDialog):
         self.music_history = self.load_history('music_history')
         
     def init_ui(self):
-        self.setWindowTitle("Reel 77 Configuration - 柒柒画片机设置")
-        self.setFixedSize(650, 650)
+        self.setWindowTitle(tr('config_title'))
+        self.setFixedSize(650, 700)  # Slightly taller to accommodate language selection
         
         layout = QVBoxLayout()
         
         # Images directories selection
-        images_group = QGroupBox("Image Directories")
+        images_group = QGroupBox(tr('image_directories'))
         images_layout = QVBoxLayout()
         
         # History dropdown for quick selection
         history_layout = QHBoxLayout()
-        history_layout.addWidget(QLabel("Recent:"))
+        history_layout.addWidget(QLabel(tr('recent')))
         self.history_combo = QComboBox()
         self.history_combo.setEditable(False)
         self.update_history_combo()
@@ -84,11 +88,11 @@ class ConfigDialog(QDialog):
         
         # Buttons for directory management
         buttons_layout = QHBoxLayout()
-        self.add_dir_btn = QPushButton("Add Directory")
+        self.add_dir_btn = QPushButton(tr('add_directory'))
         self.add_dir_btn.clicked.connect(self.add_directory)
-        self.remove_dir_btn = QPushButton("Remove")
+        self.remove_dir_btn = QPushButton(tr('remove'))
         self.remove_dir_btn.clicked.connect(self.remove_directory)
-        self.clear_dirs_btn = QPushButton("Clear All")
+        self.clear_dirs_btn = QPushButton(tr('clear_all'))
         self.clear_dirs_btn.clicked.connect(self.clear_directories)
         
         buttons_layout.addWidget(self.add_dir_btn)
@@ -100,7 +104,7 @@ class ConfigDialog(QDialog):
         images_group.setLayout(images_layout)
         
         # Music file selection
-        music_group = QGroupBox("Background Music (Optional)")
+        music_group = QGroupBox(tr('background_music'))
         music_layout = QVBoxLayout()
         
         # Dropdown for history
@@ -113,7 +117,7 @@ class ConfigDialog(QDialog):
                 self.music_combo.addItem(os.path.basename(file_path), file_path)
             self.music_combo.setCurrentIndex(0)  # Select first item (most recent)
         else:
-            self.music_combo.addItem("No history")
+            self.music_combo.addItem(tr('no_history'))
             # If we found a default music file, add it
             if self.music_file:
                 self.music_combo.addItem(os.path.basename(self.music_file), self.music_file)
@@ -126,7 +130,7 @@ class ConfigDialog(QDialog):
         self.music_path_edit = QLineEdit()
         self.music_path_edit.setReadOnly(True)
         self.music_path_edit.setText(self.music_file)
-        self.music_browse_btn = QPushButton("Browse...")
+        self.music_browse_btn = QPushButton(tr('browse'))
         self.music_browse_btn.clicked.connect(self.browse_music_file)
         music_path_layout.addWidget(self.music_path_edit)
         music_path_layout.addWidget(self.music_browse_btn)
@@ -136,12 +140,12 @@ class ConfigDialog(QDialog):
         music_group.setLayout(music_layout)
         
         # Image count and timing selection
-        count_group = QGroupBox("Display Settings")
+        count_group = QGroupBox(tr('display_settings'))
         count_layout = QVBoxLayout()
         
         # Images per screen row
         images_row = QHBoxLayout()
-        images_row.addWidget(QLabel("Images per screen:"))
+        images_row.addWidget(QLabel(tr('images_per_screen')))
         self.count_combo = QComboBox()
         self.count_combo.addItems(["2", "3", "4"])
         self.count_combo.setCurrentText("3")
@@ -151,13 +155,13 @@ class ConfigDialog(QDialog):
         count_layout.addLayout(images_row)
         
         # Timing options
-        timing_label = QLabel("Image Change Timing:")
+        timing_label = QLabel(tr('image_change_timing'))
         timing_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
         count_layout.addWidget(timing_label)
         
         # Portrait timing row
         portrait_row = QHBoxLayout()
-        portrait_row.addWidget(QLabel("Portrait (tall) images:"))
+        portrait_row.addWidget(QLabel(tr('portrait_images')))
         self.portrait_timing_combo = QComboBox()
         self.portrait_timing_combo.addItems([
             "2-4 seconds",
@@ -176,7 +180,7 @@ class ConfigDialog(QDialog):
         
         # Landscape timing row  
         landscape_row = QHBoxLayout()
-        landscape_row.addWidget(QLabel("Landscape (wide) images:"))
+        landscape_row.addWidget(QLabel(tr('landscape_images')))
         self.landscape_timing_combo = QComboBox()
         self.landscape_timing_combo.addItems([
             "2-4 seconds",
@@ -193,16 +197,47 @@ class ConfigDialog(QDialog):
         landscape_row.addStretch()
         count_layout.addLayout(landscape_row)
         
+        # Language selection
+        lang_separator = QLabel("")
+        lang_separator.setStyleSheet("margin-top: 10px;")
+        count_layout.addWidget(lang_separator)
+        
+        lang_label = QLabel(tr('interface_language'))
+        lang_label.setStyleSheet("font-weight: bold;")
+        count_layout.addWidget(lang_label)
+        
+        lang_row = QHBoxLayout()
+        self.lang_button_group = QButtonGroup()
+        self.english_radio = QRadioButton(tr('english'))
+        self.chinese_radio = QRadioButton(tr('chinese'))
+        
+        self.lang_button_group.addButton(self.english_radio, 0)
+        self.lang_button_group.addButton(self.chinese_radio, 1)
+        
+        # Set current language
+        if get_language() == 'en':
+            self.english_radio.setChecked(True)
+        else:
+            self.chinese_radio.setChecked(True)
+        
+        # Connect language change
+        self.lang_button_group.idClicked.connect(self.on_language_changed)
+        
+        lang_row.addWidget(self.english_radio)
+        lang_row.addWidget(self.chinese_radio)
+        lang_row.addStretch()
+        count_layout.addLayout(lang_row)
+        
         count_group.setLayout(count_layout)
         
         # Buttons
         button_layout = QHBoxLayout()
-        self.clear_history_btn = QPushButton("Clear History")
+        self.clear_history_btn = QPushButton(tr('clear_history'))
         self.clear_history_btn.clicked.connect(self.clear_history)
-        self.start_btn = QPushButton("Start")
+        self.start_btn = QPushButton(tr('start'))
         self.start_btn.clicked.connect(self.on_start)
         self.start_btn.setEnabled(False)
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton(tr('cancel'))
         self.cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(self.clear_history_btn)
         button_layout.addStretch()
@@ -233,10 +268,10 @@ class ConfigDialog(QDialog):
                 if len(dirs) == 1:
                     display = os.path.basename(dirs[0])
                 else:
-                    display = f"{len(dirs)} directories"
+                    display = format_tr('directories_count', len(dirs))
                 self.history_combo.addItem(display, dirs)
         else:
-            self.history_combo.addItem("No history")
+            self.history_combo.addItem(tr('no_history'))
             
     def update_dirs_list(self):
         """Update the list widget with current directories"""
@@ -252,7 +287,7 @@ class ConfigDialog(QDialog):
     def add_directory(self):
         """Add a new directory to the list"""
         dir_path = QFileDialog.getExistingDirectory(
-            self, "Select Images Directory", 
+            self, tr('select_images_directory'), 
             os.path.expanduser("~")
         )
         if dir_path and dir_path not in self.images_dirs:
@@ -276,8 +311,8 @@ class ConfigDialog(QDialog):
     def clear_directories(self):
         """Clear all directories"""
         reply = QMessageBox.question(
-            self, "Clear All Directories", 
-            "Are you sure you want to remove all directories?",
+            self, tr('clear_all_directories_title'), 
+            tr('clear_all_directories_msg'),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -296,9 +331,9 @@ class ConfigDialog(QDialog):
             
     def browse_music_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Music File", 
+            self, tr('select_music_file'), 
             os.path.expanduser("~"),
-            "Audio Files (*.mp3 *.wav *.ogg *.flac);;All Files (*.*)"
+            f"{tr('audio_files')} (*.mp3 *.wav *.ogg *.flac);;{tr('all_files')} (*.*)"
         )
         if file_path:
             self.music_file = file_path
@@ -324,6 +359,20 @@ class ConfigDialog(QDialog):
         """Handle landscape timing change"""
         self.settings.setValue('landscape_timing', text)
         
+    def on_language_changed(self, button_id):
+        """Handle language change"""
+        if button_id == 0:  # English
+            set_language('en')
+        else:  # Chinese
+            set_language('zh')
+        
+        # Show message that restart is recommended
+        QMessageBox.information(
+            self,
+            tr('language') if button_id == 0 else tr('language'),
+            "Language will change after restarting the configuration dialog.\n语言将在重新打开设置对话框后生效。"
+        )
+        
     def validate_start_button(self):
         # Enable start button only if at least one directory is selected
         checked_dirs = self.get_checked_directories()
@@ -343,8 +392,8 @@ class ConfigDialog(QDialog):
         checked_dirs = self.get_checked_directories()
         if not checked_dirs:
             QMessageBox.warning(
-                self, "No Directories Selected",
-                "Please select at least one directory."
+                self, tr('no_directories_title'),
+                tr('no_directories_msg')
             )
             return
             
@@ -357,8 +406,8 @@ class ConfigDialog(QDialog):
                 
         if not has_any_images:
             QMessageBox.warning(
-                self, "No Images Found",
-                "None of the selected directories contain any supported image files."
+                self, tr('no_images_title'),
+                tr('no_images_msg')
             )
             return
             
@@ -443,8 +492,8 @@ class ConfigDialog(QDialog):
     def clear_history(self):
         """Clear all history"""
         reply = QMessageBox.question(
-            self, "Clear History", 
-            "Are you sure you want to clear all directory history?",
+            self, tr('clear_history_title'), 
+            tr('clear_history_msg'),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -458,7 +507,7 @@ class ConfigDialog(QDialog):
             self.images_combo.clear()
             self.images_combo.addItem("No history")
             self.music_combo.clear()
-            self.music_combo.addItem("No history")
+            self.music_combo.addItem(tr('no_history'))
             
     def get_first_music_file(self, directory):
         """Get the first music file from a directory"""
