@@ -11,7 +11,7 @@ class ConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         # Initialize settings
-        self.settings = QSettings('ImagePlayer', 'Config')
+        self.settings = QSettings('Reel77', 'Config')
         
         # Load history - handle both old and new formats
         self.load_and_migrate_history()
@@ -57,7 +57,7 @@ class ConfigDialog(QDialog):
         self.music_history = self.load_history('music_history')
         
     def init_ui(self):
-        self.setWindowTitle("Mac Images Player Configuration")
+        self.setWindowTitle("Reel 77 Configuration - 柒柒画片机设置")
         self.setFixedSize(650, 650)
         
         layout = QVBoxLayout()

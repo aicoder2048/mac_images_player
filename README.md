@@ -1,4 +1,4 @@
-# 🎨 Mac Images Player
+# 🎨 Reel 77 (柒柒画片机)
 
 一款精美的 macOS 图片幻灯片播放器，支持背景音乐，基于 PyQt6 构建。
 

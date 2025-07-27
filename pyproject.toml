@@ -1,7 +1,7 @@
 [project]
-name = "player"
+name = "reel-77"
 version = "0.1.0"
-description = "Add your description here"
+description = "Reel 77 (柒柒画片机) - A stylish slideshow application with background music"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

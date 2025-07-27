@@ -12,7 +12,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = config
         self.music_player = MusicPlayer()
-        self.settings = QSettings('ImagePlayer', 'Config')
+        self.settings = QSettings('Reel77', 'Config')
         self.music_history = self.load_music_history()
         self.is_paused = False  # Track overall pause state
         self.music_was_playing = False  # Track if music was playing before pause
@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
         self.setup_music()
         
     def init_ui(self):
-        self.setWindowTitle("Mac Images Player")
+        self.setWindowTitle("Reel 77 - 柒柒画片机")
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #141414;

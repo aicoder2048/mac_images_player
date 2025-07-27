@@ -6,7 +6,7 @@ from src.main_window import MainWindow
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Image Player")
+    app.setApplicationName("Reel 77")
     
     # Show configuration dialog
     config_dialog = ConfigDialog()
