@@ -1,7 +1,8 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame, QGraphicsOpacityEffect
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame, QGraphicsOpacityEffect, QGraphicsBlurEffect
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize, QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup
-from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform, QPainter, QFont, QPen
+from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform, QPainter, QFont, QPen, QBrush
 from typing import List, Optional
+from enum import Enum
 import sys
 import random
 from functools import partial
@@ -10,8 +11,14 @@ from utils.image_utils import (get_image_files, load_and_scale_image,
                               get_random_images, calculate_image_dimensions)
 
 
+class DisplayMode(Enum):
+    FIT = "Fit"  # Original mode with black bars
+    BLUR_FILL = "Blur Fill"  # Mode with blurred background
+    ZOOM_FILL = "Zoom Fill"  # Zoom to fill entire pane
+
+
 class ImageLabel(QLabel):
-    """Custom QLabel for displaying images"""
+    """Custom QLabel for displaying images with different display modes"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -24,6 +31,8 @@ class ImageLabel(QLabel):
         """)
         self.setScaledContents(False)
         self._original_pixmap: Optional[QPixmap] = None
+        self._background_pixmap: Optional[QPixmap] = None
+        self._display_mode = DisplayMode.BLUR_FILL  # Default to blur fill
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         
     def set_image(self, pixmap: QPixmap):
@@ -32,16 +41,96 @@ class ImageLabel(QLabel):
             self._original_pixmap = pixmap
             self.update_display()
             
+    def set_display_mode(self, mode: DisplayMode):
+        """Set the display mode and update the display"""
+        if self._display_mode != mode:
+            self._display_mode = mode
+            self.update_display()
+            
+    def create_blurred_background(self, pixmap: QPixmap) -> QPixmap:
+        """Create a blurred version of the image for background"""
+        # Scale image to fill the entire label (may crop)
+        scaled_fill = pixmap.scaled(
+            self.size(),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation
+        )
+        
+        # Crop to exact size if needed
+        if scaled_fill.size() != self.size():
+            x = (scaled_fill.width() - self.width()) // 2
+            y = (scaled_fill.height() - self.height()) // 2
+            scaled_fill = scaled_fill.copy(x, y, self.width(), self.height())
+        
+        # Simple blur: scale down then up
+        small_size = QSize(max(1, self.width() // 8), max(1, self.height() // 8))
+        blurred = scaled_fill.scaled(small_size, Qt.AspectRatioMode.IgnoreAspectRatio, 
+                                    Qt.TransformationMode.SmoothTransformation)
+        blurred = blurred.scaled(self.size(), Qt.AspectRatioMode.IgnoreAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation)
+        
+        # Add a dark overlay for better contrast
+        painter = QPainter(blurred)
+        painter.fillRect(blurred.rect(), QColor(0, 0, 0, 120))
+        painter.end()
+        
+        return blurred
+            
     def update_display(self):
-        """Update the displayed image"""
+        """Update the displayed image based on current display mode"""
         if self._original_pixmap and not self._original_pixmap.isNull():
-            # Scale to fit while maintaining aspect ratio
-            scaled = self._original_pixmap.scaled(
-                self.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            super().setPixmap(scaled)
+            if self._display_mode == DisplayMode.FIT:
+                # Original fit mode - just scale and center with black bars
+                scaled = self._original_pixmap.scaled(
+                    self.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                super().setPixmap(scaled)
+                
+            elif self._display_mode == DisplayMode.BLUR_FILL:
+                # Blur fill mode - blurred background with centered image
+                display_pixmap = QPixmap(self.size())
+                display_pixmap.fill(QColor(10, 10, 10))
+                
+                painter = QPainter(display_pixmap)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                
+                # Draw blurred background
+                blurred_bg = self.create_blurred_background(self._original_pixmap)
+                painter.drawPixmap(0, 0, blurred_bg)
+                
+                # Draw the main image on top
+                scaled = self._original_pixmap.scaled(
+                    self.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                
+                # Center the image
+                x = (self.width() - scaled.width()) // 2
+                y = (self.height() - scaled.height()) // 2
+                painter.drawPixmap(x, y, scaled)
+                
+                painter.end()
+                
+                super().setPixmap(display_pixmap)
+                
+            elif self._display_mode == DisplayMode.ZOOM_FILL:
+                # Zoom fill mode - scale to fill and crop
+                scaled = self._original_pixmap.scaled(
+                    self.size(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                
+                # Crop to exact size if needed
+                if scaled.size() != self.size():
+                    x = (scaled.width() - self.width()) // 2
+                    y = (scaled.height() - self.height()) // 2
+                    scaled = scaled.copy(x, y, self.width(), self.height())
+                
+                super().setPixmap(scaled)
             
     def resizeEvent(self, event):
         """Rescale image when label is resized"""
@@ -53,6 +142,7 @@ class ImageLabel(QLabel):
         """Clear the label"""
         super().clear()
         self._original_pixmap = None
+        self._background_pixmap = None
 
 
 class ImageSlot(QFrame):
@@ -203,6 +293,11 @@ class ImageSlot(QFrame):
             self.pin_label.show()
         else:
             self.pin_label.hide()
+            
+    def set_display_mode(self, mode: DisplayMode):
+        """Set display mode for both labels"""
+        self.current_label.set_display_mode(mode)
+        self.next_label.set_display_mode(mode)
 
 
 class ImageViewer(QWidget):
@@ -358,11 +453,8 @@ class ImageViewer(QWidget):
             
     def load_image_for_display(self, image_path: str) -> Optional[QPixmap]:
         """Load and scale image for slot size"""
-        # Use pre-calculated slot dimensions
-        img_width = min(self.slot_width, int(self.slot_height * 9 / 16))  # Maintain 9:16 aspect ratio
-        img_height = int(img_width * 16 / 9)
-        
-        return load_and_scale_image(image_path, (img_width, img_height), maintain_aspect=True)
+        # Use full slot dimensions to maximize image size
+        return load_and_scale_image(image_path, (self.slot_width, self.slot_height), maintain_aspect=True)
         
     @pyqtSlot()
     def change_single_image(self, index: int):
@@ -412,3 +504,8 @@ class ImageViewer(QWidget):
         if slot_index < len(self.image_slots):
             slot = self.image_slots[slot_index]
             slot.set_pinned(not slot.is_pinned)
+            
+    def set_display_mode(self, mode: DisplayMode):
+        """Set display mode for all image slots"""
+        for slot in self.image_slots:
+            slot.set_display_mode(mode)

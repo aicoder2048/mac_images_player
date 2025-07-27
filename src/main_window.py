@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QMenu
 from PyQt6.QtCore import Qt, QTimer, QSettings
-from PyQt6.QtGui import QAction, QKeySequence
-from src.image_viewer import ImageViewer
+from PyQt6.QtGui import QAction, QKeySequence, QActionGroup
+from src.image_viewer import ImageViewer, DisplayMode
 from src.music_player import MusicPlayer
 import os
 import json
@@ -91,6 +91,49 @@ class MainWindow(QMainWindow):
         fullscreen_action.setShortcut('F11')
         fullscreen_action.triggered.connect(self.toggle_fullscreen)
         view_menu.addAction(fullscreen_action)
+        
+        # Fill menu
+        fill_menu = menubar.addMenu('Fill')
+        
+        # Create action group for mutually exclusive selection
+        self.display_mode_group = QActionGroup(self)
+        self.display_mode_group.setExclusive(True)
+        
+        # Load saved display mode or default to BLUR_FILL
+        saved_mode_value = self.settings.value('display_mode', DisplayMode.BLUR_FILL.value)
+        saved_mode = DisplayMode.BLUR_FILL
+        for mode in DisplayMode:
+            if mode.value == saved_mode_value:
+                saved_mode = mode
+                break
+        
+        # Create actions for each display mode
+        blur_fill_action = QAction('Blur Fill', self)
+        blur_fill_action.setCheckable(True)
+        blur_fill_action.setChecked(saved_mode == DisplayMode.BLUR_FILL)
+        blur_fill_action.setData(DisplayMode.BLUR_FILL)
+        blur_fill_action.triggered.connect(lambda: self.set_display_mode(DisplayMode.BLUR_FILL))
+        self.display_mode_group.addAction(blur_fill_action)
+        fill_menu.addAction(blur_fill_action)
+        
+        fit_action = QAction('Fit', self)
+        fit_action.setCheckable(True)
+        fit_action.setChecked(saved_mode == DisplayMode.FIT)
+        fit_action.setData(DisplayMode.FIT)
+        fit_action.triggered.connect(lambda: self.set_display_mode(DisplayMode.FIT))
+        self.display_mode_group.addAction(fit_action)
+        fill_menu.addAction(fit_action)
+        
+        zoom_fill_action = QAction('Zoom Fill', self)
+        zoom_fill_action.setCheckable(True)
+        zoom_fill_action.setChecked(saved_mode == DisplayMode.ZOOM_FILL)
+        zoom_fill_action.setData(DisplayMode.ZOOM_FILL)
+        zoom_fill_action.triggered.connect(lambda: self.set_display_mode(DisplayMode.ZOOM_FILL))
+        self.display_mode_group.addAction(zoom_fill_action)
+        fill_menu.addAction(zoom_fill_action)
+        
+        # Apply the saved display mode
+        self.image_viewer.set_display_mode(saved_mode)
         
         # Music menu
         music_menu = menubar.addMenu('Music')
@@ -216,3 +259,9 @@ class MainWindow(QMainWindow):
                 
                 # Don't recreate the entire menu bar - it causes duplicates
                 # The current music is already playing, no need to update UI
+                
+    def set_display_mode(self, mode: DisplayMode):
+        """Set the display mode for all image slots"""
+        self.image_viewer.set_display_mode(mode)
+        # Save the display mode preference
+        self.settings.setValue('display_mode', mode.value)
