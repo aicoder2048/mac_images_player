@@ -443,8 +443,8 @@ class ImageViewer(QWidget):
         # Calculate slot dimensions
         self.calculate_slot_dimensions()
         
-        # Start with portrait images
-        available_images = self.portrait_images.copy()
+        # Start with random selection from ALL images
+        available_images = self.image_files.copy()
         random.shuffle(available_images)
         
         # Display initial images
@@ -557,11 +557,6 @@ class ImageViewer(QWidget):
         if index >= len(self.image_slots):
             return
             
-        # Check if we should switch to landscape mode
-        if self.should_switch_to_landscape():
-            self.switch_to_landscape_mode()
-            return
-            
         # Skip if this slot is pinned
         if self.image_slots[index].is_pinned:
             # Keep the timer running but don't change the image
@@ -569,14 +564,26 @@ class ImageViewer(QWidget):
             self.timers[index].start(random.randint(3000, 5000))
             return
             
-        # Get available portrait images
-        available = [img for img in self.portrait_images if img not in self.current_images]
+        # Get available images from ALL images (not just portrait)
+        available = [img for img in self.image_files if img not in self.current_images]
         if not available:
-            available = [img for img in self.portrait_images if img != self.current_images[index]]
+            available = [img for img in self.image_files if img != self.current_images[index]]
             
         if available:
             new_image = random.choice(available)
             self.current_images[index] = new_image
+            
+            # Check if this is a landscape image and we should switch modes
+            if self.current_layout_mode == LayoutMode.PORTRAIT:
+                try:
+                    with Image.open(new_image) as img:
+                        width, height = img.size
+                        if width > height and not self.transition_in_progress:
+                            # This is a landscape image, switch to landscape mode
+                            self.switch_to_landscape_mode_with_image(new_image)
+                            return
+                except Exception as e:
+                    print(f"Error checking image orientation: {e}")
             
             pixmap = self.load_image_for_display(new_image)
             if pixmap:
@@ -628,7 +635,8 @@ class ImageViewer(QWidget):
                 # Assume portrait if can't determine
                 self.portrait_images.append(img_path)
                 
-        print(f"Categorized images: {len(self.portrait_images)} portrait, {len(self.landscape_images)} landscape")
+        print(f"Total images: {len(self.image_files)} ({len(self.portrait_images)} portrait, {len(self.landscape_images)} landscape)")
+        print("Using true random selection from all images")
         
         # Show source directories info
         if 'images_dirs' in self.config:
@@ -648,7 +656,7 @@ class ImageViewer(QWidget):
             self.landscape_slot.set_pinned(not self.landscape_slot.is_pinned)
             
     def change_landscape_image(self):
-        """Change image in landscape mode - immediately switch back to portrait after timer expires"""
+        """Change image in landscape mode - select next random image"""
         current_time = time.time()
         if self.last_landscape_change_time > 0:
             time_since_last = current_time - self.last_landscape_change_time
@@ -664,10 +672,43 @@ class ImageViewer(QWidget):
             self.landscape_timer.start(interval)
             return
         
-        # We've already shown one landscape image when entering landscape mode
-        # Now it's time to switch back to portrait
-        print("[DEBUG] Switching back to portrait mode after showing landscape image")
-        self.switch_to_portrait_mode()
+        # Select a random image from ALL images
+        available = [img for img in self.image_files if img != self.landscape_slot.current_image_path]
+        if not available:
+            available = self.image_files
+            
+        if available:
+            new_image = random.choice(available)
+            
+            # Check orientation of the selected image
+            try:
+                with Image.open(new_image) as img:
+                    width, height = img.size
+                    if width <= height:
+                        # This is a portrait image, switch back to portrait mode
+                        print("[DEBUG] Selected portrait image, switching back to portrait mode")
+                        # Update the current_images to include this portrait image
+                        if len(self.current_images) > 0:
+                            self.current_images[0] = new_image
+                        self.switch_to_portrait_mode()
+                        return
+            except Exception as e:
+                print(f"Error checking image orientation: {e}")
+            
+            # It's a landscape image, display it
+            print(f"[DEBUG] Loading new landscape image: {os.path.basename(new_image)}")
+            pixmap = self.load_landscape_image(new_image)
+            if pixmap:
+                self.landscape_slot.show_image(new_image, pixmap, initial=False, fast_transition=True)
+                self.landscape_image_count += 1
+                self.last_landscape_change_time = current_time
+                print(f"[DEBUG] Landscape image count now: {self.landscape_image_count}")
+                
+        # Continue with another timer cycle
+        self.landscape_timer.setSingleShot(True)
+        interval = random.randint(3000, 5000)
+        print(f"[DEBUG] Setting next landscape timer interval: {interval}ms")
+        self.landscape_timer.start(interval)
             
     def load_landscape_image(self, image_path: str) -> Optional[QPixmap]:
         """Load and scale landscape image"""
@@ -681,27 +722,54 @@ class ImageViewer(QWidget):
             print(f"[DEBUG TIMER] Current layout mode: {self.current_layout_mode}")
             print(f"[DEBUG TIMER] Is paused: {self.is_paused}")
         
-    def should_switch_to_landscape(self) -> bool:
-        """Decide if we should switch to landscape mode"""
-        if self.transition_in_progress or self.mode_switch_cooldown.isActive():
-            return False
+        
+    def switch_to_landscape_mode_with_image(self, image_path: str):
+        """Switch to landscape mode and display the specified image"""
+        if self.transition_in_progress or self.current_layout_mode == LayoutMode.LANDSCAPE:
+            return
             
-        # Don't switch if any portrait images are pinned
-        if any(slot.is_pinned for slot in self.image_slots):
-            return False
+        self.transition_in_progress = True
+        
+        # Stop all portrait timers
+        for timer in self.timers:
+            timer.stop()
             
-        # Check if we have landscape images
-        if not self.landscape_images:
-            return False
-            
-        # Random chance to switch (adjust probability as needed)
-        return random.random() < 0.3  # 30% chance
+        # Switch layout
+        self.current_layout_mode = LayoutMode.LANDSCAPE
+        self.stacked_layout.setCurrentWidget(self.landscape_widget)
+        
+        # Calculate landscape dimensions
+        self.calculate_slot_dimensions()
+        
+        # Reset landscape tracking
+        self.landscape_image_count = 0
+        self.landscape_start_time = time.time()
+        self.last_landscape_change_time = self.landscape_start_time
+        
+        # Display the specified landscape image
+        pixmap = self.load_landscape_image(image_path)
+        if pixmap:
+            self.landscape_slot.show_image(image_path, pixmap, initial=True)
+            self.landscape_image_count = 1
+                
+        # Start a single-shot timer to switch back to portrait after showing this landscape image
+        try:
+            self.landscape_timer.timeout.disconnect()
+        except:
+            pass  # No connections to disconnect
+        self.landscape_timer.timeout.connect(self.change_landscape_image)
+        self.landscape_timer.setSingleShot(True)  # Single shot - only fire once
+        interval = random.randint(3000, 5000)
+        self.landscape_timer.start(interval)
+        
+        # Start cooldown
+        self.mode_switch_cooldown.start(self.cooldown_duration)
+        
+        self.transition_in_progress = False
         
     def switch_to_landscape_mode(self):
         """Switch from portrait to landscape mode"""
-        print(f"[DEBUG] switch_to_landscape_mode called at {time.time():.2f}")
         if self.transition_in_progress or self.current_layout_mode == LayoutMode.LANDSCAPE:
-            print(f"[DEBUG] Cannot switch: transition={self.transition_in_progress}, mode={self.current_layout_mode}")
             return
             
         self.transition_in_progress = True
@@ -723,7 +791,6 @@ class ImageViewer(QWidget):
         self.landscape_image_count = 0
         self.landscape_start_time = time.time()
         self.last_landscape_change_time = self.landscape_start_time
-        print(f"[DEBUG] Landscape mode started at {self.landscape_start_time:.2f}")
         
         # Load and display a landscape image
         if self.landscape_images:
