@@ -10,12 +10,12 @@ QiQi Player is a PyQt6-based image slideshow application with background music s
 
 ### Running the Application
 ```bash
-# Using uv (preferred)
+# ALWAYS use uv to run Python scripts
 uv run python main.py
-
-# Direct python
-python main.py
+uv run python create_test_images.py
 ```
+
+**Important**: Always use `uv run` when executing Python scripts in this project to ensure proper environment and dependency management.
 
 ### Installing Dependencies
 ```bash

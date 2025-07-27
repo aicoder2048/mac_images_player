@@ -1,11 +1,12 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame, QGraphicsOpacityEffect, QGraphicsBlurEffect
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QVBoxLayout, QSizePolicy, QFrame, QGraphicsOpacityEffect, QGraphicsBlurEffect, QStackedLayout
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize, QPropertyAnimation, QSequentialAnimationGroup, QParallelAnimationGroup
-from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform, QPainter, QFont, QPen, QBrush
-from typing import List, Optional
+from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform, QPainter, QFont, QPen, QBrush, QImage
+from typing import List, Optional, Tuple
 from enum import Enum
 import sys
 import random
 from functools import partial
+from PIL import Image
 sys.path.append('..')
 from utils.image_utils import (get_image_files, load_and_scale_image, 
                               get_random_images, calculate_image_dimensions)
@@ -15,6 +16,11 @@ class DisplayMode(Enum):
     FIT = "Fit"  # Original mode with black bars
     BLUR_FILL = "Blur Fill"  # Mode with blurred background
     ZOOM_FILL = "Zoom Fill"  # Zoom to fill entire pane
+
+
+class LayoutMode(Enum):
+    PORTRAIT = "portrait"  # Multiple vertical columns
+    LANDSCAPE = "landscape"  # Single horizontal row
 
 
 class ImageLabel(QLabel):
@@ -315,6 +321,26 @@ class ImageViewer(QWidget):
         self.slot_height = 0
         self.is_paused = False
         self.pause_label = None
+        
+        # Layout mode tracking
+        self.current_layout_mode = LayoutMode.PORTRAIT
+        self.transition_in_progress = False
+        self.mode_switch_cooldown = QTimer()
+        self.mode_switch_cooldown.setSingleShot(True)
+        self.mode_switch_cooldown.timeout.connect(self.on_cooldown_finished)
+        self.cooldown_duration = 3000  # 3 seconds minimum between mode switches
+        
+        # Image categorization
+        self.portrait_images: List[str] = []
+        self.landscape_images: List[str] = []
+        self.categorize_images()
+        
+        # Landscape mode components (will be created in init_ui)
+        self.landscape_slot: Optional[ImageSlot] = None
+        self.landscape_timer: Optional[QTimer] = None
+        self.landscape_width = 0
+        self.landscape_height = 0
+        
         self.init_ui()
         
     def init_ui(self):
@@ -324,24 +350,54 @@ class ImageViewer(QWidget):
         palette.setColor(QPalette.ColorRole.Window, QColor(10, 10, 10))
         self.setPalette(palette)
         
-        # Main layout
-        main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
+        # Create stacked layout for switching between portrait and landscape modes
+        self.stacked_layout = QStackedLayout()
         
-        # Create image slots
+        # Create portrait mode widget
+        self.portrait_widget = QWidget()
+        portrait_layout = QHBoxLayout()
+        portrait_layout.setContentsMargins(20, 20, 20, 20)
+        portrait_layout.setSpacing(15)
+        
+        # Create image slots for portrait mode
         for i in range(self.image_count):
             slot = ImageSlot(i)
             slot.clicked.connect(self.toggle_pin)  # Connect click signal
             self.image_slots.append(slot)
-            main_layout.addWidget(slot, 1)  # Equal stretch
+            portrait_layout.addWidget(slot, 1)  # Equal stretch
             
             # Create timer for this slot
             timer = QTimer()
             timer.timeout.connect(partial(self.change_single_image, i))
             self.timers.append(timer)
         
-        self.setLayout(main_layout)
+        self.portrait_widget.setLayout(portrait_layout)
+        
+        # Create landscape mode widget
+        self.landscape_widget = QWidget()
+        landscape_layout = QVBoxLayout()
+        landscape_layout.setContentsMargins(20, 20, 20, 20)
+        landscape_layout.setSpacing(0)
+        
+        # Create single slot for landscape mode
+        self.landscape_slot = ImageSlot(99)  # Use 99 as special index for landscape
+        self.landscape_slot.clicked.connect(lambda: self.toggle_pin_landscape())
+        landscape_layout.addWidget(self.landscape_slot)
+        
+        # Create timer for landscape slot
+        self.landscape_timer = QTimer()
+        self.landscape_timer.timeout.connect(self.change_landscape_image)
+        
+        self.landscape_widget.setLayout(landscape_layout)
+        
+        # Add both widgets to stacked layout
+        self.stacked_layout.addWidget(self.portrait_widget)
+        self.stacked_layout.addWidget(self.landscape_widget)
+        
+        # Start with portrait mode
+        self.stacked_layout.setCurrentWidget(self.portrait_widget)
+        
+        self.setLayout(self.stacked_layout)
         
         # Create single pause indicator (floating)
         self.pause_label = QLabel(self)
@@ -368,7 +424,8 @@ class ImageViewer(QWidget):
         # Calculate slot dimensions
         self.calculate_slot_dimensions()
         
-        available_images = self.image_files.copy()
+        # Start with portrait images
+        available_images = self.portrait_images.copy()
         random.shuffle(available_images)
         
         # Display initial images
@@ -386,21 +443,32 @@ class ImageViewer(QWidget):
                 self.timers[i].start(interval)
             
     def calculate_slot_dimensions(self):
-        """Calculate dimensions for each slot"""
-        # Get available space
-        total_width = self.width() - 40 - (15 * (self.image_count - 1))  # Minus margins and spacing
-        total_height = self.height() - 40  # Minus margins
-        
-        # Calculate dimensions for each slot
-        self.slot_width = total_width // self.image_count
-        self.slot_height = total_height
-        
-        # Set minimum and maximum sizes for each slot to prevent growing
-        for slot in self.image_slots:
-            slot.setMinimumWidth(self.slot_width - 10)
-            slot.setMaximumWidth(self.slot_width + 10)
-            slot.setMinimumHeight(self.slot_height - 10)
-            slot.setMaximumHeight(self.slot_height + 10)
+        """Calculate dimensions for each slot based on current mode"""
+        if self.current_layout_mode == LayoutMode.PORTRAIT:
+            # Get available space for portrait mode
+            total_width = self.width() - 40 - (15 * (self.image_count - 1))  # Minus margins and spacing
+            total_height = self.height() - 40  # Minus margins
+            
+            # Calculate dimensions for each slot
+            self.slot_width = total_width // self.image_count
+            self.slot_height = total_height
+            
+            # Set minimum and maximum sizes for each slot to prevent growing
+            for slot in self.image_slots:
+                slot.setMinimumWidth(self.slot_width - 10)
+                slot.setMaximumWidth(self.slot_width + 10)
+                slot.setMinimumHeight(self.slot_height - 10)
+                slot.setMaximumHeight(self.slot_height + 10)
+        else:
+            # Landscape mode - use full width and height
+            self.landscape_width = self.width() - 40
+            self.landscape_height = self.height() - 40
+            
+            if self.landscape_slot:
+                self.landscape_slot.setMinimumWidth(self.landscape_width - 10)
+                self.landscape_slot.setMaximumWidth(self.landscape_width + 10)
+                self.landscape_slot.setMinimumHeight(self.landscape_height - 10)
+                self.landscape_slot.setMaximumHeight(self.landscape_height + 10)
             
     def display_initial_image(self, index: int, image_path: str):
         """Display initial image at given index"""
@@ -424,10 +492,14 @@ class ImageViewer(QWidget):
         """Pause all image changes"""
         if not self.is_paused:
             self.is_paused = True
-            # Stop all timers
-            for timer in self.timers:
-                if timer.isActive():
-                    timer.stop()
+            # Stop all timers based on current mode
+            if self.current_layout_mode == LayoutMode.PORTRAIT:
+                for timer in self.timers:
+                    if timer.isActive():
+                        timer.stop()
+            else:
+                if self.landscape_timer.isActive():
+                    self.landscape_timer.stop()
             # Show pause indicator
             self.pause_label.show()
             self.position_pause_label()
@@ -438,10 +510,13 @@ class ImageViewer(QWidget):
             self.is_paused = False
             # Hide pause indicator
             self.pause_label.hide()
-            # Restart timers with random intervals
-            for i in range(len(self.timers)):
-                interval = random.randint(3000, 5000)
-                self.timers[i].start(interval)
+            # Restart timers based on current mode
+            if self.current_layout_mode == LayoutMode.PORTRAIT:
+                for i in range(len(self.timers)):
+                    interval = random.randint(3000, 5000)
+                    self.timers[i].start(interval)
+            else:
+                self.landscape_timer.start(6000)
                 
     def position_pause_label(self):
         """Position pause label in center of viewer"""
@@ -462,6 +537,11 @@ class ImageViewer(QWidget):
         if index >= len(self.image_slots):
             return
             
+        # Check if we should switch to landscape mode
+        if self.should_switch_to_landscape():
+            self.switch_to_landscape_mode()
+            return
+            
         # Skip if this slot is pinned
         if self.image_slots[index].is_pinned:
             # Keep the timer running but don't change the image
@@ -469,10 +549,10 @@ class ImageViewer(QWidget):
             self.timers[index].start(random.randint(3000, 5000))
             return
             
-        # Get available images
-        available = [img for img in self.image_files if img not in self.current_images]
+        # Get available portrait images
+        available = [img for img in self.portrait_images if img not in self.current_images]
         if not available:
-            available = [img for img in self.image_files if img != self.current_images[index]]
+            available = [img for img in self.portrait_images if img != self.current_images[index]]
             
         if available:
             new_image = random.choice(available)
@@ -509,3 +589,145 @@ class ImageViewer(QWidget):
         """Set display mode for all image slots"""
         for slot in self.image_slots:
             slot.set_display_mode(mode)
+        if self.landscape_slot:
+            self.landscape_slot.set_display_mode(mode)
+            
+    def categorize_images(self):
+        """Categorize images by orientation"""
+        for img_path in self.image_files:
+            try:
+                # Use PIL to get image dimensions without loading full image
+                with Image.open(img_path) as img:
+                    width, height = img.size
+                    if width > height:
+                        self.landscape_images.append(img_path)
+                    else:
+                        self.portrait_images.append(img_path)
+            except Exception as e:
+                print(f"Error checking image {img_path}: {e}")
+                # Assume portrait if can't determine
+                self.portrait_images.append(img_path)
+                
+        print(f"Categorized images: {len(self.portrait_images)} portrait, {len(self.landscape_images)} landscape")
+        
+    def on_cooldown_finished(self):
+        """Called when mode switch cooldown expires"""
+        # Cooldown finished, mode switches are now allowed
+        pass
+        
+    def toggle_pin_landscape(self):
+        """Toggle pin state for landscape slot"""
+        if self.landscape_slot:
+            self.landscape_slot.set_pinned(not self.landscape_slot.is_pinned)
+            
+    def change_landscape_image(self):
+        """Change image in landscape mode"""
+        if not self.landscape_images:
+            # No landscape images, switch back to portrait
+            self.switch_to_portrait_mode()
+            return
+            
+        # Get a random landscape image
+        available = [img for img in self.landscape_images if img != self.landscape_slot.current_image_path]
+        if not available:
+            available = self.landscape_images
+            
+        if available:
+            new_image = random.choice(available)
+            pixmap = self.load_landscape_image(new_image)
+            if pixmap:
+                self.landscape_slot.show_image(new_image, pixmap, initial=False)
+                
+        # After showing landscape image, plan to switch back to portrait
+        if not self.landscape_slot.is_pinned:
+            # Set timer to switch back after this image
+            self.landscape_timer.stop()
+            self.landscape_timer.timeout.disconnect()
+            self.landscape_timer.timeout.connect(self.switch_to_portrait_mode)
+            self.landscape_timer.start(6000)  # Show landscape for 6 seconds
+            
+    def load_landscape_image(self, image_path: str) -> Optional[QPixmap]:
+        """Load and scale landscape image"""
+        return load_and_scale_image(image_path, (self.landscape_width, self.landscape_height), maintain_aspect=True)
+        
+    def should_switch_to_landscape(self) -> bool:
+        """Decide if we should switch to landscape mode"""
+        if self.transition_in_progress or self.mode_switch_cooldown.isActive():
+            return False
+            
+        # Don't switch if any portrait images are pinned
+        if any(slot.is_pinned for slot in self.image_slots):
+            return False
+            
+        # Check if we have landscape images
+        if not self.landscape_images:
+            return False
+            
+        # Random chance to switch (adjust probability as needed)
+        return random.random() < 0.3  # 30% chance
+        
+    def switch_to_landscape_mode(self):
+        """Switch from portrait to landscape mode"""
+        if self.transition_in_progress or self.current_layout_mode == LayoutMode.LANDSCAPE:
+            return
+            
+        self.transition_in_progress = True
+        
+        # Stop all portrait timers
+        for timer in self.timers:
+            timer.stop()
+            
+        # TODO: Add fade out animation here
+        
+        # Switch layout
+        self.current_layout_mode = LayoutMode.LANDSCAPE
+        self.stacked_layout.setCurrentWidget(self.landscape_widget)
+        
+        # Calculate landscape dimensions
+        self.calculate_slot_dimensions()
+        
+        # Load and display a landscape image
+        if self.landscape_images:
+            image_path = random.choice(self.landscape_images)
+            pixmap = self.load_landscape_image(image_path)
+            if pixmap:
+                self.landscape_slot.show_image(image_path, pixmap, initial=True)
+                
+        # Start landscape timer
+        self.landscape_timer.timeout.disconnect()
+        self.landscape_timer.timeout.connect(self.change_landscape_image)
+        self.landscape_timer.start(6000)  # Landscape images show for 6 seconds
+        
+        # Start cooldown
+        self.mode_switch_cooldown.start(self.cooldown_duration)
+        
+        self.transition_in_progress = False
+        
+    def switch_to_portrait_mode(self):
+        """Switch from landscape to portrait mode"""
+        if self.transition_in_progress or self.current_layout_mode == LayoutMode.PORTRAIT:
+            return
+            
+        self.transition_in_progress = True
+        
+        # Stop landscape timer
+        self.landscape_timer.stop()
+        
+        # TODO: Add fade out animation here
+        
+        # Switch layout
+        self.current_layout_mode = LayoutMode.PORTRAIT
+        self.stacked_layout.setCurrentWidget(self.portrait_widget)
+        
+        # Calculate portrait dimensions
+        self.calculate_slot_dimensions()
+        
+        # Restart portrait timers
+        for i in range(len(self.timers)):
+            interval = random.randint(3000, 5000)
+            self.timers[i].start(interval)
+            
+        # Start cooldown
+        self.mode_switch_cooldown.start(self.cooldown_duration)
+        
+        self.transition_in_progress = False
