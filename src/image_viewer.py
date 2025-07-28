@@ -13,6 +13,7 @@ sys.path.append('..')
 from utils.image_utils import (get_image_files, get_image_files_from_dirs, 
                               load_and_scale_image, get_random_images, 
                               calculate_image_dimensions)
+from src.translations import tr
 
 
 class DisplayMode(Enum):
@@ -168,6 +169,7 @@ class ImageSlot(QFrame):
         self.setFrameStyle(QFrame.Shape.NoFrame)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMouseTracking(True)  # Enable mouse tracking for hover
         self.init_ui()
         
     def init_ui(self):
@@ -209,6 +211,30 @@ class ImageSlot(QFrame):
         self.pin_label.setFixedSize(40, 40)
         self.pin_label.hide()
         self.pin_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        
+        # Create custom tooltip widget
+        self.tooltip_widget = QLabel(self)
+        self.tooltip_widget.setStyleSheet("""
+            QLabel {
+                background-color: rgba(60, 60, 60, 80);
+                color: rgba(220, 220, 220, 200);
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+        """)
+        self.tooltip_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.tooltip_widget.hide()
+        self.tooltip_widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        
+        # Create tooltip timer
+        self.tooltip_timer = QTimer()
+        self.tooltip_timer.setSingleShot(True)
+        self.tooltip_timer.timeout.connect(self.hide_tooltip)
+        
+        # Create tooltip opacity effect
+        self.tooltip_opacity = QGraphicsOpacityEffect()
+        self.tooltip_widget.setGraphicsEffect(self.tooltip_opacity)
         
         self.setLayout(layout)
         
@@ -293,10 +319,58 @@ class ImageSlot(QFrame):
         self.next_label.setGeometry(rect)
         # Position pin label in top-right corner
         self.pin_label.move(rect.width() - 50, 10)
+        # Reposition tooltip if visible
+        if self.tooltip_widget.isVisible():
+            x = (rect.width() - self.tooltip_widget.width()) // 2
+            self.tooltip_widget.move(x, 20)
         
     def sizeHint(self):
         """Provide size hint to maintain equal sizes"""
         return QSize(300, 600)  # Default size hint
+        
+    def enterEvent(self, event):
+        """Show tooltip on mouse enter"""
+        # Set text based on pin state
+        if self.is_pinned:
+            self.tooltip_widget.setText(tr('hint_click_to_unpin'))
+        else:
+            self.tooltip_widget.setText(tr('hint_click_to_pin'))
+        
+        # Adjust size and position
+        self.tooltip_widget.adjustSize()
+        x = (self.width() - self.tooltip_widget.width()) // 2
+        y = 20  # Position near top
+        self.tooltip_widget.move(x, y)
+        
+        # Show with fade in
+        self.tooltip_widget.show()
+        self.tooltip_fade_in = QPropertyAnimation(self.tooltip_opacity, b"opacity")
+        self.tooltip_fade_in.setDuration(150)
+        self.tooltip_fade_in.setStartValue(0)
+        self.tooltip_fade_in.setEndValue(1)
+        self.tooltip_fade_in.start()
+        
+        # Start auto-hide timer (3 seconds)
+        self.tooltip_timer.start(3000)
+        
+        super().enterEvent(event)
+        
+    def leaveEvent(self, event):
+        """Hide tooltip on mouse leave"""
+        self.tooltip_timer.stop()
+        self.hide_tooltip()
+        super().leaveEvent(event)
+        
+    def hide_tooltip(self):
+        """Hide tooltip with fade out"""
+        if not self.tooltip_widget.isVisible():
+            return
+        self.tooltip_fade_out = QPropertyAnimation(self.tooltip_opacity, b"opacity")
+        self.tooltip_fade_out.setDuration(150)
+        self.tooltip_fade_out.setStartValue(1)
+        self.tooltip_fade_out.setEndValue(0)
+        self.tooltip_fade_out.finished.connect(self.tooltip_widget.hide)
+        self.tooltip_fade_out.start()
         
     def mousePressEvent(self, event):
         """Handle mouse clicks to toggle pin state"""
@@ -462,15 +536,15 @@ class ImageViewer(QWidget):
         self.pause_label = QLabel(self)
         self.pause_label.setStyleSheet("""
             QLabel {
-                background-color: rgba(0, 0, 0, 180);
-                color: white;
-                font-size: 36px;
-                font-weight: bold;
-                padding: 15px 25px;
-                border-radius: 10px;
+                background-color: rgba(60, 60, 60, 80);
+                color: rgba(220, 220, 220, 200);
+                font-size: 24px;
+                font-weight: normal;
+                padding: 10px 15px;
+                border-radius: 8px;
             }
         """)
-        self.pause_label.setText("⏸ PAUSED")
+        self.pause_label.setText("⏸ " + tr('paused'))
         self.pause_label.hide()
         
     def showEvent(self, event):
@@ -572,18 +646,22 @@ class ImageViewer(QWidget):
             # Restart timers based on current mode
             if self.current_layout_mode == LayoutMode.PORTRAIT:
                 for i in range(len(self.timers)):
-                    interval = self.get_random_portrait_interval()
-                    self.timers[i].start(interval)
+                    # Only restart timer if slot is not pinned
+                    if i < len(self.image_slots) and not self.image_slots[i].is_pinned:
+                        interval = self.get_random_portrait_interval()
+                        self.timers[i].start(interval)
             else:
-                interval = self.get_random_landscape_interval()
-                self.landscape_timer.start(interval)
+                # In landscape mode, check if landscape slot is pinned
+                if self.landscape_slot and not self.landscape_slot.is_pinned:
+                    interval = self.get_random_landscape_interval()
+                    self.landscape_timer.start(interval)
                 
     def position_pause_label(self):
-        """Position pause label in center of viewer"""
+        """Position pause label in bottom-right corner"""
         if self.pause_label:
             self.pause_label.adjustSize()
-            x = (self.width() - self.pause_label.width()) // 2
-            y = self.height() - self.pause_label.height() - 50
+            x = self.width() - self.pause_label.width() - 30
+            y = self.height() - self.pause_label.height() - 30
             self.pause_label.move(x, y)
             
     def load_image_for_display(self, image_path: str) -> Optional[QPixmap]:

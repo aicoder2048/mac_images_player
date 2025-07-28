@@ -68,6 +68,13 @@ TRANSLATIONS = {
         # Language selection
         'language_settings': 'Language Settings',
         'interface_language': 'Interface Language:',
+        
+        # Tooltips
+        'hint_click_to_pin': 'Click to pin',
+        'hint_click_to_unpin': 'Click to unpin',
+        
+        # UI indicators
+        'paused': 'PAUSED',
     },
     'zh': {
         # Config Dialog
@@ -130,6 +137,13 @@ TRANSLATIONS = {
         # Language selection
         'language_settings': '语言设置',
         'interface_language': '界面语言:',
+        
+        # Tooltips
+        'hint_click_to_pin': '点击固定',
+        'hint_click_to_unpin': '点击取消固定',
+        
+        # UI indicators
+        'paused': '暂停',
     }
 }
 
