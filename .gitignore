@@ -13,8 +13,7 @@ wheels/
 CLAUDE.md
 
 # Project specific
-images/
-music/
+music_local/
 .DS_Store
 
 # Keep icons directory
