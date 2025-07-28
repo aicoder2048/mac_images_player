@@ -75,6 +75,21 @@ TRANSLATIONS = {
         
         # UI indicators
         'paused': 'PAUSED',
+        
+        # Favorites feature
+        'favorites': 'Favorites',
+        'hint_click_to_favorite': 'Click to favorite',
+        'hint_click_to_unfavorite': 'Click to unfavorite',
+        'open_in_finder': 'Show in Finder',
+        'open_in_preview': 'Open in Preview',
+        'remove_from_favorites': 'Remove from favorites',
+        'enable_dedicated_slot': 'Enable dedicated favorites slot',
+        'disable_dedicated_slot': 'Disable dedicated favorites slot',
+        'favorites_slot': 'Favorites Column',
+        'no_favorites': 'No favorites yet',
+        'dedicated_slot_min_requirement': 'Need at least 2 favorites to enable dedicated slot',
+        'remove_all_favorites': 'Remove all favorites',
+        'confirm_remove_all_favorites': 'Are you sure you want to remove all favorites?',
     },
     'zh': {
         # Config Dialog
@@ -144,6 +159,21 @@ TRANSLATIONS = {
         
         # UI indicators
         'paused': '暂停',
+        
+        # Favorites feature
+        'favorites': '收藏',
+        'hint_click_to_favorite': '点击收藏',
+        'hint_click_to_unfavorite': '点击取消收藏',
+        'open_in_finder': '在Finder中显示',
+        'open_in_preview': '在预览中打开',
+        'remove_from_favorites': '移除收藏',
+        'enable_dedicated_slot': '启用收藏专属播放槽',
+        'disable_dedicated_slot': '禁用收藏专属播放槽',
+        'favorites_slot': '收藏专栏',
+        'no_favorites': '暂无收藏',
+        'dedicated_slot_min_requirement': '需要至少2个收藏才能启用专属播放槽',
+        'remove_all_favorites': '移除所有收藏',
+        'confirm_remove_all_favorites': '您确定要移除所有收藏吗？',
     }
 }
 

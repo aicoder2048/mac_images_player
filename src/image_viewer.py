@@ -159,6 +159,7 @@ class ImageSlot(QFrame):
     """Container for a single image display slot"""
     
     clicked = pyqtSignal(int)  # Signal when clicked, sends slot index
+    favorite_toggled = pyqtSignal(int, str, bool)  # slot index, image path, is_favorited
     
     def __init__(self, slot_index: int, parent=None):
         super().__init__(parent)
@@ -166,6 +167,7 @@ class ImageSlot(QFrame):
         self.current_image_path = ""
         self.is_transitioning = False
         self.is_pinned = False
+        self.is_favorited = False
         self.setFrameStyle(QFrame.Shape.NoFrame)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -235,6 +237,44 @@ class ImageSlot(QFrame):
         # Create tooltip opacity effect
         self.tooltip_opacity = QGraphicsOpacityEffect()
         self.tooltip_widget.setGraphicsEffect(self.tooltip_opacity)
+        
+        # Create favorite icon label (overlay)
+        self.favorite_label = QLabel(self)
+        
+        # Create dedicated slot label (overlay)
+        self.dedicated_label = QLabel(self)
+        self.dedicated_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(60, 60, 60, 80);
+                color: rgba(220, 220, 220, 200);
+                border: none;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 18px;
+                font-weight: normal;
+            }
+        """)
+        self.dedicated_label.setText(tr('favorites_slot'))
+        self.dedicated_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.dedicated_label.hide()
+        self.favorite_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(0, 0, 0, 150);
+                color: white;
+                border-radius: 20px;
+                padding: 8px;
+                font-size: 20px;
+                cursor: pointer;
+            }
+            QLabel:hover {
+                background-color: rgba(255, 0, 0, 100);
+            }
+        """)
+        self.favorite_label.setText("♡")  # Empty heart
+        self.favorite_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.favorite_label.setFixedSize(40, 40)
+        self.favorite_label.hide()
+        self.favorite_label.setCursor(Qt.CursorShape.PointingHandCursor)
         
         self.setLayout(layout)
         
@@ -319,6 +359,11 @@ class ImageSlot(QFrame):
         self.next_label.setGeometry(rect)
         # Position pin label in top-right corner
         self.pin_label.move(rect.width() - 50, 10)
+        # Position favorite label below pin label
+        self.favorite_label.move(rect.width() - 50, 60)
+        # Position dedicated label at bottom left
+        self.dedicated_label.adjustSize()
+        self.dedicated_label.move(10, rect.height() - self.dedicated_label.height() - 10)
         # Reposition tooltip if visible
         if self.tooltip_widget.isVisible():
             x = (rect.width() - self.tooltip_widget.width()) // 2
@@ -373,26 +418,87 @@ class ImageSlot(QFrame):
         self.tooltip_fade_out.start()
         
     def mousePressEvent(self, event):
-        """Handle mouse clicks to toggle pin state"""
+        """Handle mouse clicks to toggle pin state or favorite"""
         if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.slot_index)
+            # Check if click is on favorite label
+            if self.favorite_label.isVisible() and self.favorite_label.geometry().contains(event.pos()):
+                self.toggle_favorite()
+            else:
+                # Default behavior - toggle pin
+                self.clicked.emit(self.slot_index)
             
     def set_pinned(self, pinned: bool):
         """Set the pinned state and update visual indicator"""
         self.is_pinned = pinned
         if pinned:
             self.pin_label.show()
+            self.favorite_label.show()
         else:
             self.pin_label.hide()
+            self.favorite_label.hide()
+            # Note: We do NOT reset favorite state when unpinned
+            # Favorites should persist independently of pin state
             
     def set_display_mode(self, mode: DisplayMode):
         """Set display mode for both labels"""
         self.current_label.set_display_mode(mode)
         self.next_label.set_display_mode(mode)
+        
+    def toggle_favorite(self):
+        """Toggle the favorite state"""
+        self.is_favorited = not self.is_favorited
+        self.update_favorite_icon()
+        self.favorite_toggled.emit(self.slot_index, self.current_image_path, self.is_favorited)
+        
+    def set_favorited(self, favorited: bool):
+        """Set the favorite state"""
+        self.is_favorited = favorited
+        self.update_favorite_icon()
+        
+    def update_favorite_icon(self):
+        """Update the favorite icon based on state"""
+        if self.is_favorited:
+            self.favorite_label.setText("♥")  # Filled heart
+            self.favorite_label.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(255, 0, 0, 150);
+                    color: white;
+                    border-radius: 20px;
+                    padding: 8px;
+                    font-size: 20px;
+                    cursor: pointer;
+                }
+                QLabel:hover {
+                    background-color: rgba(255, 0, 0, 200);
+                }
+            """)
+        else:
+            self.favorite_label.setText("♡")  # Empty heart
+            self.favorite_label.setStyleSheet("""
+                QLabel {
+                    background-color: rgba(0, 0, 0, 150);
+                    color: white;
+                    border-radius: 20px;
+                    padding: 8px;
+                    font-size: 20px;
+                    cursor: pointer;
+                }
+                QLabel:hover {
+                    background-color: rgba(255, 0, 0, 100);
+                }
+            """)
+            
+    def set_dedicated(self, dedicated: bool):
+        """Set whether this slot is a dedicated favorites slot"""
+        if dedicated:
+            self.dedicated_label.show()
+        else:
+            self.dedicated_label.hide()
 
 
 class ImageViewer(QWidget):
     images_changed = pyqtSignal()
+    favorites_changed = pyqtSignal(list)  # Emits list of favorite image paths
     
     def __init__(self, config: dict, parent=None):
         super().__init__(parent)
@@ -415,6 +521,11 @@ class ImageViewer(QWidget):
         self.slot_height = 0
         self.is_paused = False
         self.pause_label = None
+        
+        # Favorites management
+        self.favorites_list: List[str] = []
+        self.dedicated_slot_enabled = False
+        self.dedicated_slot_auto_disabled = False  # Track if user manually disabled
         
         # Layout mode tracking
         self.current_layout_mode = LayoutMode.PORTRAIT
@@ -496,6 +607,7 @@ class ImageViewer(QWidget):
         for i in range(self.image_count):
             slot = ImageSlot(i)
             slot.clicked.connect(self.toggle_pin)  # Connect click signal
+            slot.favorite_toggled.connect(self.on_favorite_toggled)  # Connect favorite signal
             self.image_slots.append(slot)
             portrait_layout.addWidget(slot, 1)  # Equal stretch
             
@@ -515,6 +627,7 @@ class ImageViewer(QWidget):
         # Create single slot for landscape mode
         self.landscape_slot = ImageSlot(99)  # Use 99 as special index for landscape
         self.landscape_slot.clicked.connect(lambda: self.toggle_pin_landscape())
+        self.landscape_slot.favorite_toggled.connect(self.on_favorite_toggled)  # Connect favorite signal
         landscape_layout.addWidget(self.landscape_slot)
         
         # Create timer for landscape slot
@@ -538,9 +651,9 @@ class ImageViewer(QWidget):
             QLabel {
                 background-color: rgba(60, 60, 60, 80);
                 color: rgba(220, 220, 220, 200);
-                font-size: 24px;
+                font-size: 18px;
                 font-weight: normal;
-                padding: 10px 15px;
+                padding: 8px 12px;
                 border-radius: 8px;
             }
         """)
@@ -609,6 +722,9 @@ class ImageViewer(QWidget):
         pixmap = self.load_image_for_display(image_path)
         if pixmap:
             self.image_slots[index].show_image(image_path, pixmap, initial=True)
+            # Set favorite state if applicable
+            if image_path in self.favorites_list:
+                self.image_slots[index].set_favorited(True)
             
     def start_timer(self, index: int):
         """Start timer for specific slot"""
@@ -684,10 +800,18 @@ class ImageViewer(QWidget):
             self.timers[index].start(self.get_random_portrait_interval())
             return
             
-        # Get available images from ALL images (not just portrait)
-        available = [img for img in self.image_files if img not in self.current_images]
-        if not available:
-            available = [img for img in self.image_files if img != self.current_images[index]]
+        # Handle dedicated favorites slot (slot 0)
+        if index == 0 and self.dedicated_slot_enabled and self.favorites_list:
+            # Only select from favorites
+            available = [img for img in self.favorites_list if img not in self.current_images]
+            if not available:
+                # If all favorites are already displayed, allow repeats but not the current one
+                available = [img for img in self.favorites_list if img != self.current_images[index]]
+        else:
+            # Get available images from ALL images (not just portrait)
+            available = [img for img in self.image_files if img not in self.current_images]
+            if not available:
+                available = [img for img in self.image_files if img != self.current_images[index]]
             
         if available:
             new_image = random.choice(available)
@@ -722,6 +846,11 @@ class ImageViewer(QWidget):
             pixmap = self.load_image_for_display(new_image)
             if pixmap:
                 self.image_slots[index].show_image(new_image, pixmap, initial=False)
+                # Update favorite state if this image is in favorites
+                if new_image in self.favorites_list:
+                    self.image_slots[index].set_favorited(True)
+                else:
+                    self.image_slots[index].set_favorited(False)
                 self.images_changed.emit()
                 
         # Reset timer with new random interval
@@ -745,6 +874,10 @@ class ImageViewer(QWidget):
         if slot_index < len(self.image_slots):
             slot = self.image_slots[slot_index]
             slot.set_pinned(not slot.is_pinned)
+            
+            # If we just pinned the image, restore its favorite state
+            if slot.is_pinned and slot.current_image_path in self.favorites_list:
+                slot.set_favorited(True)
             
     def set_display_mode(self, mode: DisplayMode):
         """Set display mode for all image slots"""
@@ -788,6 +921,10 @@ class ImageViewer(QWidget):
         """Toggle pin state for landscape slot"""
         if self.landscape_slot:
             self.landscape_slot.set_pinned(not self.landscape_slot.is_pinned)
+            
+            # If we just pinned the image, restore its favorite state
+            if self.landscape_slot.is_pinned and self.landscape_slot.current_image_path in self.favorites_list:
+                self.landscape_slot.set_favorited(True)
             
     def change_landscape_image(self):
         """Called when landscape timer expires - always return to portrait mode"""
@@ -890,6 +1027,11 @@ class ImageViewer(QWidget):
         if pixmap:
             self.landscape_slot.show_image(image_path, pixmap, initial=True)
             self.landscape_image_count = 1
+            # Set favorite state if applicable
+            if image_path in self.favorites_list:
+                self.landscape_slot.set_favorited(True)
+            else:
+                self.landscape_slot.set_favorited(False)
                 
         # Start a single-shot timer to switch back to portrait after showing this landscape image
         try:
@@ -943,6 +1085,11 @@ class ImageViewer(QWidget):
             if pixmap:
                 self.landscape_slot.show_image(image_path, pixmap, initial=True)
                 self.landscape_image_count = 1
+                # Set favorite state if applicable
+                if image_path in self.favorites_list:
+                    self.landscape_slot.set_favorited(True)
+                else:
+                    self.landscape_slot.set_favorited(False)
                 
         # Start a single-shot timer to switch back to portrait after showing this landscape image
         try:
@@ -1087,3 +1234,80 @@ class ImageViewer(QWidget):
             
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
+        
+    @pyqtSlot(int, str, bool)
+    def on_favorite_toggled(self, slot_index: int, image_path: str, is_favorited: bool):
+        """Handle favorite toggle from image slot"""
+        if is_favorited:
+            if image_path not in self.favorites_list:
+                self.favorites_list.append(image_path)
+        else:
+            if image_path in self.favorites_list:
+                self.favorites_list.remove(image_path)
+        
+        # Auto-enable dedicated slot when favorites > 1 and not manually disabled
+        if len(self.favorites_list) > 1 and not self.dedicated_slot_auto_disabled:
+            if not self.dedicated_slot_enabled:
+                self.enable_dedicated_slot(auto=True)
+        elif self.dedicated_slot_enabled and len(self.favorites_list) <= 1:
+            # Auto-disable if favorites <= 1
+            self.disable_dedicated_slot(auto=True)
+        
+        # Emit signal for menu update
+        self.favorites_changed.emit(self.favorites_list.copy())
+    
+    def enable_dedicated_slot(self, auto=False):
+        """Enable the dedicated favorites slot"""
+        if len(self.favorites_list) <= 1:
+            return  # Not enough favorites
+            
+        self.dedicated_slot_enabled = True
+        if not auto:
+            self.dedicated_slot_auto_disabled = False
+        
+        # Apply special styling to slot 0
+        if self.image_slots:
+            self.image_slots[0].setStyleSheet("""
+                QFrame {
+                    border: 3px solid #ffd700;
+                    border-radius: 12px;
+                    background-color: rgba(255, 215, 0, 10);
+                }
+            """)
+            self.image_slots[0].set_dedicated(True)
+            
+            # Force update of slot 0 to show a favorite
+            if self.favorites_list:
+                self.timers[0].stop()
+                self.change_single_image(0)
+    
+    def disable_dedicated_slot(self, auto=False):
+        """Disable the dedicated favorites slot"""
+        self.dedicated_slot_enabled = False
+        if not auto:
+            self.dedicated_slot_auto_disabled = True
+        
+        # Remove special styling from slot 0
+        if self.image_slots:
+            self.image_slots[0].setStyleSheet("")
+            self.image_slots[0].set_dedicated(False)
+            
+    def get_favorites(self):
+        """Get the current favorites list"""
+        return self.favorites_list.copy()
+    
+    def set_favorites(self, favorites: List[str]):
+        """Set the favorites list (for loading from settings)"""
+        self.favorites_list = favorites.copy()
+        # Update all slots to reflect favorite state
+        for slot in self.image_slots:
+            if slot.current_image_path in self.favorites_list:
+                slot.set_favorited(True)
+        
+        # Check if we should auto-enable or auto-disable dedicated slot
+        if len(self.favorites_list) > 1 and not self.dedicated_slot_auto_disabled:
+            if not self.dedicated_slot_enabled:
+                self.enable_dedicated_slot(auto=True)
+        elif self.dedicated_slot_enabled and len(self.favorites_list) <= 1:
+            # Auto-disable if favorites <= 1
+            self.disable_dedicated_slot(auto=True)

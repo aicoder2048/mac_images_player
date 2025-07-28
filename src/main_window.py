@@ -1,11 +1,12 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QMenu
-from PyQt6.QtCore import Qt, QTimer, QSettings
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QMenu, QMessageBox
+from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSlot
 from PyQt6.QtGui import QAction, QKeySequence, QActionGroup
 from src.image_viewer import ImageViewer, DisplayMode
 from src.music_player import MusicPlayer
 from src.translations import tr, init_language, get_language, set_language
 import os
 import json
+import subprocess
 
 
 class MainWindow(QMainWindow):
@@ -20,8 +21,18 @@ class MainWindow(QMainWindow):
         self.music_history = self.load_music_history()
         self.is_paused = False  # Track overall pause state
         self.music_was_playing = False  # Track if music was playing before pause
+        self.favorites_menu = None  # Will be created in create_menu_bar
         self.init_ui()
         self.setup_music()
+        
+        # Connect to favorites changed signal
+        self.image_viewer.favorites_changed.connect(self.update_favorites_menu)
+        self.image_viewer.favorites_changed.connect(lambda: self.save_favorites_settings())
+        
+        # Load favorites from settings
+        self.load_favorites()
+        # Update favorites menu to show loaded favorites
+        self.update_favorites_menu()
         
     def init_ui(self):
         self.setWindowTitle("Reel 77 - 柒柒画片机")
@@ -176,6 +187,10 @@ class MainWindow(QMainWindow):
             no_history_action.setEnabled(False)
             select_music_menu.addAction(no_history_action)
         
+        # Favorites menu
+        self.favorites_menu = menubar.addMenu(tr('favorites'))
+        self.update_favorites_menu()
+        
         # Language menu
         language_menu = menubar.addMenu('Language/语言')
         
@@ -294,3 +309,171 @@ class MainWindow(QMainWindow):
         set_language(lang_code)
         # Recreate menu bar with new language
         self.create_menu_bar()
+        
+    @pyqtSlot(list)
+    def update_favorites_menu(self, favorites=None):
+        """Update the favorites menu with current favorites"""
+        if not self.favorites_menu:
+            return
+            
+        self.favorites_menu.clear()
+        
+        # Get current favorites if not provided
+        if favorites is None:
+            favorites = self.image_viewer.get_favorites()
+        
+        if not favorites:
+            no_fav_action = QAction(tr('no_favorites'), self)
+            no_fav_action.setEnabled(False)
+            self.favorites_menu.addAction(no_fav_action)
+        else:
+            # Add each favorite image
+            for i, image_path in enumerate(favorites):
+                image_name = os.path.basename(image_path)
+                # Create submenu for each favorite
+                image_menu = QMenu(image_name, self)
+                
+                # Open in Finder action
+                finder_action = QAction(tr('open_in_finder'), self)
+                finder_action.triggered.connect(lambda checked, path=image_path: self.open_in_finder(path))
+                image_menu.addAction(finder_action)
+                
+                # Open in Preview action
+                preview_action = QAction(tr('open_in_preview'), self)
+                preview_action.triggered.connect(lambda checked, path=image_path: self.open_in_preview(path))
+                image_menu.addAction(preview_action)
+                
+                image_menu.addSeparator()
+                
+                # Remove from favorites action
+                remove_action = QAction(tr('remove_from_favorites'), self)
+                remove_action.triggered.connect(lambda checked, path=image_path: self.remove_from_favorites(path))
+                image_menu.addAction(remove_action)
+                
+                self.favorites_menu.addMenu(image_menu)
+        
+        # Add remove all favorites option if there are favorites
+        if favorites:
+            self.favorites_menu.addSeparator()
+            remove_all_action = QAction(tr('remove_all_favorites'), self)
+            remove_all_action.triggered.connect(self.remove_all_favorites)
+            self.favorites_menu.addAction(remove_all_action)
+        
+        # Add separator and dedicated slot options
+        self.favorites_menu.addSeparator()
+        
+        # Enable/Disable dedicated slot action
+        if len(favorites) > 1:
+            if self.image_viewer.dedicated_slot_enabled:
+                disable_action = QAction(tr('disable_dedicated_slot'), self)
+                disable_action.triggered.connect(self.disable_dedicated_slot)
+                self.favorites_menu.addAction(disable_action)
+            else:
+                enable_action = QAction(tr('enable_dedicated_slot'), self)
+                enable_action.triggered.connect(self.enable_dedicated_slot)
+                self.favorites_menu.addAction(enable_action)
+        else:
+            min_req_action = QAction(tr('dedicated_slot_min_requirement'), self)
+            min_req_action.setEnabled(False)
+            self.favorites_menu.addAction(min_req_action)
+    
+    def open_in_finder(self, file_path):
+        """Open file location in Finder"""
+        try:
+            subprocess.run(['open', '-R', file_path])
+        except Exception as e:
+            print(f"Error opening in Finder: {e}")
+    
+    def open_in_preview(self, file_path):
+        """Open file in Preview"""
+        try:
+            subprocess.run(['open', file_path])
+        except Exception as e:
+            print(f"Error opening in Preview: {e}")
+    
+    def remove_from_favorites(self, file_path):
+        """Remove an image from favorites"""
+        # Find the slot showing this image and update its state
+        for i, slot in enumerate(self.image_viewer.image_slots):
+            if slot.current_image_path == file_path:
+                slot.set_favorited(False)
+                self.image_viewer.on_favorite_toggled(i, file_path, False)
+                break
+        else:
+            # Image not currently displayed, just remove from list
+            favorites = self.image_viewer.get_favorites()
+            if file_path in favorites:
+                favorites.remove(file_path)
+                self.image_viewer.set_favorites(favorites)
+                self.image_viewer.favorites_changed.emit(favorites)
+    
+    def enable_dedicated_slot(self):
+        """Enable the dedicated favorites slot"""
+        self.image_viewer.enable_dedicated_slot(auto=False)
+        self.save_favorites_settings()
+    
+    def disable_dedicated_slot(self):
+        """Disable the dedicated favorites slot"""
+        self.image_viewer.disable_dedicated_slot(auto=False)
+        self.save_favorites_settings()
+    
+    def load_favorites(self):
+        """Load favorites from settings"""
+        try:
+            favorites_json = self.settings.value('favorites', '[]')
+            favorites = json.loads(favorites_json)
+            # Filter out non-existent files
+            favorites = [f for f in favorites if os.path.exists(f)]
+            self.image_viewer.set_favorites(favorites)
+            
+            # Load dedicated slot settings
+            dedicated_enabled = self.settings.value('dedicated_slot_enabled', False, type=bool)
+            auto_disabled = self.settings.value('dedicated_slot_auto_disabled', False, type=bool)
+            
+            self.image_viewer.dedicated_slot_enabled = dedicated_enabled
+            self.image_viewer.dedicated_slot_auto_disabled = auto_disabled
+            
+            # Apply dedicated slot styling only if enabled AND there are enough favorites
+            if dedicated_enabled and len(favorites) > 1 and self.image_viewer.image_slots:
+                self.image_viewer.image_slots[0].setStyleSheet("""
+                    QFrame {
+                        border: 3px solid #ffd700;
+                        border-radius: 12px;
+                        background-color: rgba(255, 215, 0, 10);
+                    }
+                """)
+                self.image_viewer.image_slots[0].set_dedicated(True)
+            elif dedicated_enabled and len(favorites) <= 1:
+                # Dedicated slot was enabled but not enough favorites, disable it
+                self.image_viewer.dedicated_slot_enabled = False
+        except Exception as e:
+            print(f"Error loading favorites: {e}")
+    
+    def save_favorites_settings(self):
+        """Save favorites and dedicated slot settings"""
+        favorites = self.image_viewer.get_favorites()
+        self.settings.setValue('favorites', json.dumps(favorites))
+        self.settings.setValue('dedicated_slot_enabled', self.image_viewer.dedicated_slot_enabled)
+        self.settings.setValue('dedicated_slot_auto_disabled', self.image_viewer.dedicated_slot_auto_disabled)
+        
+    def remove_all_favorites(self):
+        """Remove all favorites after confirmation"""
+        # Show confirmation dialog
+        reply = QMessageBox.question(
+            self, 
+            tr('remove_all_favorites'), 
+            tr('confirm_remove_all_favorites'),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Clear favorites list
+            self.image_viewer.set_favorites([])
+            self.image_viewer.favorites_changed.emit([])
+            # Update all displayed images' favorite state
+            for slot in self.image_viewer.image_slots:
+                slot.set_favorited(False)
+            # Also update landscape slot if exists
+            if self.image_viewer.landscape_slot:
+                self.image_viewer.landscape_slot.set_favorited(False)
