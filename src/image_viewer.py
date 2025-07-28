@@ -636,6 +636,7 @@ class ImageViewer(QWidget):
             # Show pause indicator
             self.pause_label.show()
             self.position_pause_label()
+            self.pause_label.raise_()
                     
     def resume(self):
         """Resume all image changes"""
@@ -663,6 +664,7 @@ class ImageViewer(QWidget):
             x = self.width() - self.pause_label.width() - 30
             y = self.height() - self.pause_label.height() - 30
             self.pause_label.move(x, y)
+            self.pause_label.raise_()
             
     def load_image_for_display(self, image_path: str) -> Optional[QPixmap]:
         """Load and scale image for slot size"""
@@ -904,6 +906,10 @@ class ImageViewer(QWidget):
         
         self.transition_in_progress = False
         
+        # Ensure pause label stays on top if visible
+        if self.is_paused and self.pause_label:
+            self.pause_label.raise_()
+        
     def switch_to_landscape_mode(self):
         """Switch from portrait to landscape mode"""
         if self.transition_in_progress or self.current_layout_mode == LayoutMode.LANDSCAPE:
@@ -1039,6 +1045,10 @@ class ImageViewer(QWidget):
         # Clear fade effects
         for slot in self.image_slots:
             slot.setGraphicsEffect(None)
+        
+        # Ensure pause label stays on top if visible
+        if self.is_paused and self.pause_label:
+            self.pause_label.raise_()
         
         # Restore portrait timer states if available, otherwise use new random intervals
         if self.portrait_timer_states and len(self.portrait_timer_states) == len(self.timers):
