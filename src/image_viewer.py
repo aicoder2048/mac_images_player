@@ -287,7 +287,7 @@ class ImageSlot(QFrame):
             return
             
         if self.is_transitioning:
-            print(f"[DEBUG] Image dropped during transition: {os.path.basename(image_path)}")
+            # print(f"[DEBUG] Image dropped during transition: {os.path.basename(image_path)}")
             return
             
         self.current_image_path = image_path
@@ -830,7 +830,7 @@ class ImageViewer(QWidget):
                         width, height = img.size
                         if width > height and not self.transition_in_progress and not self.landscape_preview_pending:
                             # This is a landscape image, show preview first
-                            print(f"[DEBUG] Landscape image detected in slot {index}, showing preview")
+                            # print(f"[DEBUG] Landscape image detected in slot {index}, showing preview")
                             self.landscape_preview_pending = True
                             
                             # Show the landscape image in the slot as preview
@@ -937,25 +937,25 @@ class ImageViewer(QWidget):
         current_time = time.time()
         if self.last_landscape_change_time > 0:
             time_since_last = current_time - self.last_landscape_change_time
-            print(f"[DEBUG] Landscape timer expired at {current_time:.2f}, {time_since_last:.2f}s since image shown")
+            # print(f"[DEBUG] Landscape timer expired at {current_time:.2f}, {time_since_last:.2f}s since image shown")
         
         # Check if landscape image is pinned
         if self.landscape_slot.is_pinned:
-            print("[DEBUG] Landscape image is pinned, staying in landscape mode")
+            # print("[DEBUG] Landscape image is pinned, staying in landscape mode")
             # Restart timer to check again later
             self.landscape_timer.setSingleShot(True)
             interval = self.get_random_landscape_interval()
-            print(f"[DEBUG] Restarting timer with interval: {interval}ms")
+            # print(f"[DEBUG] Restarting timer with interval: {interval}ms")
             self.landscape_timer.start(interval)
             return
         
         # Always switch back to portrait mode after showing a landscape image
-        print("[DEBUG] Landscape display complete, returning to portrait mode")
+        # print("[DEBUG] Landscape display complete, returning to portrait mode")
         self.switch_to_portrait_mode()
             
     def delayed_landscape_switch(self, image_path: str, slot_index: int):
         """Execute landscape switch after preview delay"""
-        print(f"[DEBUG] Executing delayed landscape switch from slot {slot_index}")
+        # print(f"[DEBUG] Executing delayed landscape switch from slot {slot_index}")
         self.landscape_preview_pending = False
         if not self.transition_in_progress and self.current_layout_mode == LayoutMode.PORTRAIT:
             self.switch_to_landscape_mode_with_image(image_path, slot_index)
@@ -967,10 +967,11 @@ class ImageViewer(QWidget):
     def debug_timer_status(self):
         """Debug timer status"""
         if hasattr(self, 'landscape_timer'):
-            print(f"[DEBUG TIMER] Landscape timer active: {self.landscape_timer.isActive()}")
-            print(f"[DEBUG TIMER] Landscape timer interval: {self.landscape_timer.interval()}")
-            print(f"[DEBUG TIMER] Current layout mode: {self.current_layout_mode}")
-            print(f"[DEBUG TIMER] Is paused: {self.is_paused}")
+            # print(f"[DEBUG TIMER] Landscape timer active: {self.landscape_timer.isActive()}")
+            # print(f"[DEBUG TIMER] Landscape timer interval: {self.landscape_timer.interval()}")
+            # print(f"[DEBUG TIMER] Current layout mode: {self.current_layout_mode}")
+            # print(f"[DEBUG TIMER] Is paused: {self.is_paused}")
+            pass
         
         
     def switch_to_landscape_mode_with_image(self, image_path: str, source_slot_index: int = -1):
@@ -994,7 +995,7 @@ class ImageViewer(QWidget):
             })
             timer.stop()
             
-        print(f"[DEBUG] Saved portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
+        # print(f"[DEBUG] Saved portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
         
         # Start progressive transition animation before switching layout
         if source_slot_index >= 0 and source_slot_index < len(self.image_slots):
@@ -1086,7 +1087,7 @@ class ImageViewer(QWidget):
         # Load and display a landscape image
         if self.landscape_images:
             image_path = random.choice(self.landscape_images)
-            print(f"[DEBUG] Initial landscape image: {os.path.basename(image_path)}")
+            # print(f"[DEBUG] Initial landscape image: {os.path.basename(image_path)}")
             pixmap = self.load_landscape_image(image_path)
             if pixmap:
                 self.landscape_slot.show_image(image_path, pixmap, initial=True)
@@ -1105,9 +1106,9 @@ class ImageViewer(QWidget):
         self.landscape_timer.timeout.connect(self.change_landscape_image)
         self.landscape_timer.setSingleShot(True)  # Single shot - only fire once
         interval = self.get_random_landscape_interval()
-        print(f"[DEBUG] Starting landscape timer with interval: {interval}ms (will switch to portrait after)")
+        # print(f"[DEBUG] Starting landscape timer with interval: {interval}ms (will switch to portrait after)")
         self.landscape_timer.start(interval)
-        print(f"[DEBUG] Timer started successfully: {self.landscape_timer.isActive()}, single shot: {self.landscape_timer.isSingleShot()}")
+        # print(f"[DEBUG] Timer started successfully: {self.landscape_timer.isActive()}, single shot: {self.landscape_timer.isSingleShot()}")
         
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
@@ -1205,24 +1206,24 @@ class ImageViewer(QWidget):
         
         # Restore portrait timer states if available, otherwise use new random intervals
         if self.portrait_timer_states and len(self.portrait_timer_states) == len(self.timers):
-            print(f"[DEBUG] Restoring portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
+            # print(f"[DEBUG] Restoring portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
             for state in self.portrait_timer_states:
                 i = state['index']
                 if i < len(self.timers) and state['was_active']:
                     # Use the saved remaining time, but ensure it's reasonable
                     remaining = max(state['remaining'], 1000)  # At least 1 second
                     self.timers[i].start(remaining)
-                    print(f"[DEBUG] Restored timer {i} with {remaining}ms remaining")
+                    # print(f"[DEBUG] Restored timer {i} with {remaining}ms remaining")
                 elif i < len(self.timers):
                     # Timer wasn't active, start with new random interval
                     interval = self.get_random_portrait_interval()
                     self.timers[i].start(interval)
-                    print(f"[DEBUG] Started new timer {i} with {interval}ms")
+                    # print(f"[DEBUG] Started new timer {i} with {interval}ms")
             # Clear saved states
             self.portrait_timer_states = []
         else:
             # No saved states or mismatch, use new random intervals
-            print("[DEBUG] No saved timer states, using new random intervals")
+            # print("[DEBUG] No saved timer states, using new random intervals")
             for i in range(len(self.timers)):
                 interval = self.get_random_portrait_interval()
                 self.timers[i].start(interval)
@@ -1232,7 +1233,7 @@ class ImageViewer(QWidget):
         
         # Update the slot that triggered landscape mode
         if self.landscape_source_slot_index >= 0 and self.landscape_source_slot_index < len(self.image_slots):
-            print(f"[DEBUG] Updating source slot {self.landscape_source_slot_index} that triggered landscape mode")
+            # print(f"[DEBUG] Updating source slot {self.landscape_source_slot_index} that triggered landscape mode")
             # Stop its timer first
             self.timers[self.landscape_source_slot_index].stop()
             # Trigger immediate update
