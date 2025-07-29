@@ -207,12 +207,16 @@ class ImageSlot(QFrame):
                 padding: 8px;
                 font-size: 24px;
             }
+            QLabel:hover {
+                background-color: rgba(80, 80, 80, 180);
+            }
         """)
         self.pin_label.setText("📌")
         self.pin_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pin_label.setFixedSize(40, 40)
         self.pin_label.hide()
-        self.pin_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.pin_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pin_label.setToolTip(tr('hint_click_to_unpin'))
         
         # Create custom tooltip widget
         self.tooltip_widget = QLabel(self)
@@ -419,11 +423,16 @@ class ImageSlot(QFrame):
     def mousePressEvent(self, event):
         """Handle mouse clicks to toggle pin state or favorite"""
         if event.button() == Qt.MouseButton.LeftButton:
+            # Check if click is on pin label (only when pinned)
+            if self.pin_label.isVisible() and self.pin_label.geometry().contains(event.pos()):
+                # Click on pin icon - unpin
+                self.clicked.emit(self.slot_index)
             # Check if click is on favorite label
-            if self.favorite_label.isVisible() and self.favorite_label.geometry().contains(event.pos()):
+            elif self.favorite_label.isVisible() and self.favorite_label.geometry().contains(event.pos()):
                 self.toggle_favorite()
-            else:
-                # Default behavior - toggle pin
+            # Click on image area
+            elif not self.is_pinned:
+                # Only pin if not already pinned
                 self.clicked.emit(self.slot_index)
             
     def set_pinned(self, pinned: bool):
