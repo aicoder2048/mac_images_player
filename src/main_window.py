@@ -1,6 +1,7 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QMenu, QMessageBox
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QPushButton, QMenu, QMessageBox,
+                             QDialog, QLabel, QHBoxLayout, QFrame)
 from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSlot
-from PyQt6.QtGui import QAction, QKeySequence, QActionGroup
+from PyQt6.QtGui import QAction, QKeySequence, QActionGroup, QFont
 from src.image_viewer import ImageViewer, DisplayMode
 from src.music_player import MusicPlayer
 from src.translations import tr, init_language, get_language, set_language
@@ -458,16 +459,14 @@ class MainWindow(QMainWindow):
         
     def remove_all_favorites(self):
         """Remove all favorites after confirmation"""
-        # Show confirmation dialog
-        reply = QMessageBox.question(
-            self, 
-            tr('remove_all_favorites'), 
-            tr('confirm_remove_all_favorites'),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+        # Show custom styled confirmation dialog
+        dialog = StyledConfirmDialog(
+            self,
+            tr('remove_all_favorites'),
+            tr('confirm_remove_all_favorites')
         )
         
-        if reply == QMessageBox.StandardButton.Yes:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             # Clear favorites list
             self.image_viewer.set_favorites([])
             self.image_viewer.favorites_changed.emit([])
@@ -477,3 +476,153 @@ class MainWindow(QMainWindow):
             # Also update landscape slot if exists
             if self.image_viewer.landscape_slot:
                 self.image_viewer.landscape_slot.set_favorited(False)
+
+
+class StyledConfirmDialog(QDialog):
+    """A custom styled confirmation dialog"""
+    def __init__(self, parent=None, title="", message=""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.setFixedSize(420, 200)
+        
+        # Remove window frame and make it frameless
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        
+        # Main layout
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Content frame with styling
+        content_frame = QFrame()
+        content_frame.setStyleSheet("""
+            QFrame {
+                background-color: #2b2b2b;
+                border: 1px solid #444;
+                border-radius: 12px;
+            }
+        """)
+        
+        content_layout = QVBoxLayout(content_frame)
+        content_layout.setContentsMargins(30, 30, 30, 20)
+        content_layout.setSpacing(25)
+        
+        # Icon and message layout
+        message_layout = QHBoxLayout()
+        message_layout.setSpacing(20)
+        
+        # Warning icon with circular background
+        icon_container = QLabel()
+        icon_container.setFixedSize(60, 60)
+        icon_container.setStyleSheet("""
+            QLabel {
+                background-color: rgba(255, 193, 7, 20);
+                border: 2px solid rgba(255, 193, 7, 40);
+                border-radius: 30px;
+            }
+        """)
+        icon_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Icon text
+        icon_label = QLabel("⚠")
+        icon_label.setParent(icon_container)
+        icon_label.setStyleSheet("""
+            QLabel {
+                font-size: 32px;
+                color: #ffc107;
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setGeometry(0, 0, 60, 60)
+        
+        # Message text
+        self.message_label = QLabel(message)
+        self.message_label.setWordWrap(True)
+        self.message_label.setStyleSheet("""
+            QLabel {
+                color: #ddd;
+                font-size: 16px;
+                font-weight: 500;
+                background-color: transparent;
+                border: none;
+                padding: 10px 0;
+            }
+        """)
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        
+        message_layout.addWidget(icon_container)
+        message_layout.addWidget(self.message_label, 1)
+        
+        # Button layout
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(15)
+        button_layout.addStretch()
+        
+        # No button (default)
+        self.no_button = QPushButton("No")
+        self.no_button.setFixedSize(100, 36)
+        self.no_button.setStyleSheet("""
+            QPushButton {
+                background-color: #0084ff;
+                color: white;
+                border: none;
+                border-radius: 18px;
+                font-size: 15px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #0070dd;
+            }
+            QPushButton:pressed {
+                background-color: #005bb5;
+            }
+        """)
+        self.no_button.clicked.connect(self.reject)
+        self.no_button.setDefault(True)
+        
+        # Yes button
+        self.yes_button = QPushButton("Yes")
+        self.yes_button.setFixedSize(100, 36)
+        self.yes_button.setStyleSheet("""
+            QPushButton {
+                background-color: #555;
+                color: white;
+                border: none;
+                border-radius: 18px;
+                font-size: 15px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #666;
+            }
+            QPushButton:pressed {
+                background-color: #444;
+            }
+        """)
+        self.yes_button.clicked.connect(self.accept)
+        
+        button_layout.addWidget(self.no_button)
+        button_layout.addWidget(self.yes_button)
+        
+        # Add to content layout
+        content_layout.addLayout(message_layout)
+        content_layout.addStretch()
+        content_layout.addLayout(button_layout)
+        
+        # Add content frame to main layout
+        main_layout.addWidget(content_frame)
+        self.setLayout(main_layout)
+        
+        # Add shadow effect
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+    def showEvent(self, event):
+        """Center the dialog on parent window"""
+        super().showEvent(event)
+        if self.parent():
+            parent_rect = self.parent().geometry()
+            x = parent_rect.x() + (parent_rect.width() - self.width()) // 2
+            y = parent_rect.y() + (parent_rect.height() - self.height()) // 2
+            self.move(x, y)

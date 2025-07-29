@@ -264,7 +264,6 @@ class ImageSlot(QFrame):
                 border-radius: 20px;
                 padding: 8px;
                 font-size: 20px;
-                cursor: pointer;
             }
             QLabel:hover {
                 background-color: rgba(255, 0, 0, 100);
@@ -466,8 +465,7 @@ class ImageSlot(QFrame):
                     border-radius: 20px;
                     padding: 8px;
                     font-size: 20px;
-                    cursor: pointer;
-                }
+                    }
                 QLabel:hover {
                     background-color: rgba(255, 0, 0, 200);
                 }
@@ -481,8 +479,7 @@ class ImageSlot(QFrame):
                     border-radius: 20px;
                     padding: 8px;
                     font-size: 20px;
-                    cursor: pointer;
-                }
+                    }
                 QLabel:hover {
                     background-color: rgba(255, 0, 0, 100);
                 }
