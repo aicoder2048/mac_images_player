@@ -1,13 +1,30 @@
 import sys
+import os
 from PyQt6.QtWidgets import QApplication
+
+# Suppress Qt warnings including QPainter warnings
+os.environ['QT_LOGGING_RULES'] = '*=false'
+os.environ['QT_LOGGING_CATEGORY'] = 'false'
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import qInstallMessageHandler, QtMsgType
 from src.config_dialog import ConfigDialog
 from src.main_window import MainWindow
 from src.translations import init_language
-import os
+
+
+def qt_message_handler(mode, context, message):
+    """Suppress Qt warnings"""
+    # Filter out QPainter warnings
+    if 'QPainter' in message:
+        return
+    # You can add other message filters here if needed
+    pass
 
 
 def main():
+    # Install custom message handler to suppress Qt warnings
+    qInstallMessageHandler(qt_message_handler)
+    
     app = QApplication(sys.argv)
     app.setApplicationName("Reel 77")
     
