@@ -1280,6 +1280,12 @@ class ImageViewer(QWidget):
             # 立即清除该槽位的landscape显示
             if original_holder < len(self.image_slots):
                 self.force_slot_to_portrait(original_holder)
+                
+                # 重要：立即重启定时器，因为没有landscape流程会完成
+                if original_holder < len(self.timers) and not self.image_slots[original_holder].is_pinned:
+                    interval = self.get_random_portrait_interval()
+                    self.timers[original_holder].start(interval)
+                    debug(f"Restarted timer for force-released slot {original_holder} with {interval}ms")
             
             # 释放锁和相关状态
             self.landscape_lock = None
