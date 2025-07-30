@@ -571,6 +571,7 @@ class ImageViewer(QWidget):
         self.landscape_queue = deque()  # 等待播放的landscape图片队列
         self.last_landscape_slot = None  # 上一个播放landscape的槽位
         self.landscape_lock_timeout = 15000  # 15秒超时
+        self.force_release_timer = None  # 强制释放定时器
         
         # 抢占机制相关
         self.last_preemption_time = 0  # 上次抢占时间
@@ -767,6 +768,8 @@ class ImageViewer(QWidget):
                     # 初始landscape也需要预览和切换流程
                     self.landscape_preview_pending = True
                     self._schedule_landscape_switch(index, image_path)
+                    # 停止定时器，防止在预览期间改变图片
+                    self.timers[index].stop()
                     # Set favorite state if applicable
                     if image_path in self.favorites_list:
                         self.image_slots[index].set_favorited(True)
@@ -1165,6 +1168,12 @@ class ImageViewer(QWidget):
     
     def _grant_lock(self, slot_index: int):
         """授予锁给指定槽位"""
+        # 取消之前的强制释放定时器（如果存在）
+        if self.force_release_timer is not None:
+            self.force_release_timer.stop()
+            self.force_release_timer = None
+            debug(f"Cancelled previous force-release timer")
+        
         self.landscape_lock = slot_index
         self.landscape_lock_time = time.time()
         self.landscape_lock_stage = 'preview'
@@ -1173,8 +1182,10 @@ class ImageViewer(QWidget):
         debug(f"Slot {slot_index} successfully acquired landscape lock")
         
         # 设置超时自动释放
-        QTimer.singleShot(self.landscape_lock_timeout, 
-                         lambda: self.force_release_lock(slot_index))
+        self.force_release_timer = QTimer()
+        self.force_release_timer.setSingleShot(True)
+        self.force_release_timer.timeout.connect(lambda: self.force_release_lock(slot_index))
+        self.force_release_timer.start(self.landscape_lock_timeout)
     
     def _can_preempt(self, slot_index: int) -> bool:
         """检查是否可以抢占当前锁"""
@@ -1264,6 +1275,13 @@ class ImageViewer(QWidget):
             return False
             
         debug(f"Releasing landscape lock from slot {self.landscape_lock}")
+        
+        # 取消强制释放定时器
+        if self.force_release_timer is not None:
+            self.force_release_timer.stop()
+            self.force_release_timer = None
+            debug(f"Cancelled force-release timer")
+            
         self.landscape_lock = None
         self.landscape_lock_time = None
         self.landscape_lock_stage = None
@@ -1286,6 +1304,10 @@ class ImageViewer(QWidget):
                     interval = self.get_random_portrait_interval()
                     self.timers[original_holder].start(interval)
                     debug(f"Restarted timer for force-released slot {original_holder} with {interval}ms")
+            
+            # 清理定时器
+            if self.force_release_timer is not None:
+                self.force_release_timer = None
             
             # 释放锁和相关状态
             self.landscape_lock = None
