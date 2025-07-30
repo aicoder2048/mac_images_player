@@ -123,17 +123,32 @@ class ConfigDialog(QDialog):
         
     def init_ui(self):
         self.setWindowTitle(tr('config_title'))
-        self.setFixedSize(650, 700)  # Slightly taller to accommodate language selection
+        self.setFixedSize(650, 750)  # Increased height for better spacing
         
         layout = QVBoxLayout()
         
         # Images directories selection
         self.images_group = QGroupBox(tr('image_directories'))
+        # Style the group box with larger, more prominent titles
+        self.images_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 15px;
+                color: #E0E0E0;
+                margin-top: 10px;
+                padding-top: 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px 0 8px;
+            }
+        """)
         images_layout = QVBoxLayout()
         
         # Set selection and management
         set_layout = QHBoxLayout()
-        self.recent_label = QLabel("图片方案:")
+        self.recent_label = QLabel(tr('image_sets'))
         set_layout.addWidget(self.recent_label)
         self.history_combo = QComboBox()
         self.history_combo.setEditable(False)
@@ -143,13 +158,13 @@ class ConfigDialog(QDialog):
         set_layout.addWidget(self.history_combo, 1)
         
         # Set management buttons
-        self.new_set_btn = QPushButton("新建")
+        self.new_set_btn = QPushButton(tr('new_set'))
         self.new_set_btn.setMaximumWidth(50)
         self.new_set_btn.clicked.connect(self.create_new_set)
-        self.rename_set_btn = QPushButton("重命名")
+        self.rename_set_btn = QPushButton(tr('rename_set'))
         self.rename_set_btn.setMaximumWidth(60)
         self.rename_set_btn.clicked.connect(self.rename_current_set)
-        self.delete_set_btn = QPushButton("删除")
+        self.delete_set_btn = QPushButton(tr('delete_set'))
         self.delete_set_btn.setMaximumWidth(50)
         self.delete_set_btn.clicked.connect(self.delete_current_set)
         
@@ -170,7 +185,7 @@ class ConfigDialog(QDialog):
         self.add_dir_btn.clicked.connect(self.add_directory)
         self.remove_dir_btn = QPushButton(tr('remove'))
         self.remove_dir_btn.clicked.connect(self.remove_directory)
-        self.clear_dirs_btn = QPushButton("清空方案")
+        self.clear_dirs_btn = QPushButton(tr('clear_set'))
         self.clear_dirs_btn.clicked.connect(self.clear_current_set_directories)
         
         buttons_layout.addWidget(self.add_dir_btn)
@@ -183,6 +198,21 @@ class ConfigDialog(QDialog):
         
         # Music file selection
         self.music_group = QGroupBox(tr('background_music'))
+        # Apply the same styling to music group
+        self.music_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 15px;
+                color: #E0E0E0;
+                margin-top: 10px;
+                padding-top: 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px 0 8px;
+            }
+        """)
         music_layout = QVBoxLayout()
         
         # Dropdown for history
@@ -219,7 +249,23 @@ class ConfigDialog(QDialog):
         
         # Image count and timing selection
         self.count_group = QGroupBox(tr('display_settings'))
+        # Apply the same styling to display settings group
+        self.count_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 15px;
+                color: #E0E0E0;
+                margin-top: 10px;
+                padding-top: 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px 0 8px;
+            }
+        """)
         count_layout = QVBoxLayout()
+        count_layout.setSpacing(8)  # Add more spacing between elements
         
         # Images per screen row
         images_row = QHBoxLayout()
@@ -234,9 +280,9 @@ class ConfigDialog(QDialog):
         count_layout.addLayout(images_row)
         
         # Timing options
-        timing_label = QLabel(tr('image_change_timing'))
-        timing_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        count_layout.addWidget(timing_label)
+        self.timing_label = QLabel(tr('image_change_timing'))
+        self.timing_label.setStyleSheet("font-weight: bold; margin-top: 8px;")
+        count_layout.addWidget(self.timing_label)
         
         # Portrait timing row
         portrait_row = QHBoxLayout()
@@ -283,9 +329,9 @@ class ConfigDialog(QDialog):
         lang_separator.setStyleSheet("margin-top: 10px;")
         count_layout.addWidget(lang_separator)
         
-        lang_label = QLabel(tr('interface_language'))
-        lang_label.setStyleSheet("font-weight: bold;")
-        count_layout.addWidget(lang_label)
+        self.lang_label = QLabel(tr('interface_language'))
+        self.lang_label.setStyleSheet("font-weight: bold;")
+        count_layout.addWidget(self.lang_label)
         
         lang_row = QHBoxLayout()
         self.lang_button_group = QButtonGroup()
@@ -314,13 +360,13 @@ class ConfigDialog(QDialog):
         debug_separator.setStyleSheet("margin-top: 15px;")
         count_layout.addWidget(debug_separator)
         
-        debug_label = QLabel(tr('debug_options'))
-        debug_label.setStyleSheet("font-weight: bold;")
-        count_layout.addWidget(debug_label)
+        self.debug_label = QLabel(tr('debug_options'))
+        self.debug_label.setStyleSheet("font-weight: bold;")
+        count_layout.addWidget(self.debug_label)
         
         debug_row = QHBoxLayout()
-        log_level_label = QLabel(tr('log_level'))
-        debug_row.addWidget(log_level_label)
+        self.log_level_label = QLabel(tr('log_level'))
+        debug_row.addWidget(self.log_level_label)
         
         self.log_level_combo = QComboBox()
         self.log_level_combo.addItem(tr('log_level_info'), 'INFO')
@@ -388,11 +434,11 @@ class ConfigDialog(QDialog):
                     # Create display string with set name and directory count
                     dir_count = len(set_obj['dirs'])
                     if dir_count == 0:
-                        display = f"{set_obj['name']} (空)"
+                        display = f"{set_obj['name']} ({tr('empty_set')})"
                     elif dir_count == 1:
-                        display = f"{set_obj['name']} (1个目录)"
+                        display = f"{set_obj['name']} ({tr('directory_count_single')})"
                     else:
-                        display = f"{set_obj['name']} ({dir_count}个目录)"
+                        display = f"{set_obj['name']} ({format_tr('directory_count_multiple', dir_count)})"
                     self.history_combo.addItem(display, set_obj['id'])
                 
                 # Select current set
@@ -686,23 +732,33 @@ class ConfigDialog(QDialog):
         self.count_group.setTitle(tr('display_settings'))
         
         # Update labels
-        self.recent_label.setText("图片方案:")
+        self.recent_label.setText(tr('image_sets'))
         self.images_per_screen_label.setText(tr('images_per_screen'))
         self.portrait_images_label.setText(tr('portrait_images'))
         self.landscape_images_label.setText(tr('landscape_images'))
         
+        # Update timing and language labels
+        if hasattr(self, 'timing_label'):
+            self.timing_label.setText(tr('image_change_timing'))
+        if hasattr(self, 'lang_label'):
+            self.lang_label.setText(tr('interface_language'))
+        if hasattr(self, 'debug_label'):
+            self.debug_label.setText(tr('debug_options'))
+        if hasattr(self, 'log_level_label'):
+            self.log_level_label.setText(tr('log_level'))
+        
         # Update buttons
         self.add_dir_btn.setText(tr('add_directory'))
         self.remove_dir_btn.setText(tr('remove'))
-        self.clear_dirs_btn.setText("清空方案")
+        self.clear_dirs_btn.setText(tr('clear_set'))
         
-        # Update set management buttons (these are Chinese-only for now)
+        # Update set management buttons
         if hasattr(self, 'new_set_btn'):
-            self.new_set_btn.setText("新建")
+            self.new_set_btn.setText(tr('new_set'))
         if hasattr(self, 'rename_set_btn'):
-            self.rename_set_btn.setText("重命名")
+            self.rename_set_btn.setText(tr('rename_set'))
         if hasattr(self, 'delete_set_btn'):
-            self.delete_set_btn.setText("删除")
+            self.delete_set_btn.setText(tr('delete_set'))
         self.music_browse_btn.setText(tr('browse'))
         self.clear_history_btn.setText(tr('clear_history'))
         self.start_btn.setText(tr('start'))
@@ -721,6 +777,9 @@ class ConfigDialog(QDialog):
                     self.log_level_combo.setItemText(i, tr('log_level_info'))
                 elif item_data == 'DEBUG':
                     self.log_level_combo.setItemText(i, tr('log_level_debug'))
+        
+        # Update image sets combo to use new language for directory counts
+        self.update_sets_combo()
         
         # Update combo box placeholder text
         if self.music_combo.count() == 1 and self.music_combo.currentData() is None:

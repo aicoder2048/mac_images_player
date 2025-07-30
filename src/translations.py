@@ -9,7 +9,7 @@ from PyQt6.QtCore import QSettings
 TRANSLATIONS = {
     'en': {
         # Config Dialog
-        'config_title': 'Reel 77 Configuration',
+        'config_title': 'Reel 77 Startup Configuration',
         'image_directories': 'Image Directories',
         'recent': 'Recent:',
         'add_directory': 'Add Directory',
@@ -75,6 +75,25 @@ TRANSLATIONS = {
         'log_level_info': 'Info',
         'log_level_debug': 'Debug',
         
+        # Image Sets Management
+        'image_sets': 'Image Sets:',
+        'new_set': 'New',
+        'rename_set': 'Rename', 
+        'delete_set': 'Delete',
+        'clear_set': 'Clear Set',
+        'interface_language_label': 'Interface Language:',
+        
+        # Directory counts
+        'directory_count_single': '1 directory',
+        'directory_count_multiple': '{} directories',
+        'empty_set': 'Empty set',
+        
+        # Labels that need translation updates
+        'image_change_timing_label': 'Image Change Timing:',
+        'interface_language_colon': 'Interface Language:',
+        'debug_options_label': 'Debug Options',
+        'log_level_colon': 'Log Level:',
+        
         # Tooltips
         'hint_click_to_pin': 'Click to pin',
         'hint_click_to_unpin': 'Click to unpin',
@@ -100,7 +119,7 @@ TRANSLATIONS = {
     },
     'zh': {
         # Config Dialog
-        'config_title': 'Reel 77 设置',
+        'config_title': '柒柒(Reel77)画片机启动设置',
         'image_directories': '图片目录',
         'recent': '最近使用:',
         'add_directory': '添加目录',
@@ -165,6 +184,25 @@ TRANSLATIONS = {
         'log_level': '日志级别:',
         'log_level_info': '信息',
         'log_level_debug': '调试',
+        
+        # Image Sets Management
+        'image_sets': '图片方案:',
+        'new_set': '新建',
+        'rename_set': '重命名', 
+        'delete_set': '删除',
+        'clear_set': '清空方案',
+        'interface_language_label': '界面语言:',
+        
+        # Directory counts
+        'directory_count_single': '1个目录',
+        'directory_count_multiple': '{}个目录',
+        'empty_set': '空方案',
+        
+        # Labels that need translation updates
+        'image_change_timing_label': '图片切换时间:',
+        'interface_language_colon': '界面语言:',
+        'debug_options_label': '调试选项',
+        'log_level_colon': '日志级别:',
         
         # Tooltips
         'hint_click_to_pin': '点击固定',
