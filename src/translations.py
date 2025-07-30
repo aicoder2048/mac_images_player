@@ -69,6 +69,12 @@ TRANSLATIONS = {
         'language_settings': 'Language Settings',
         'interface_language': 'Interface Language:',
         
+        # Debug/Logging options
+        'debug_options': 'Debug Options',
+        'log_level': 'Log Level:',
+        'log_level_info': 'Info',
+        'log_level_debug': 'Debug',
+        
         # Tooltips
         'hint_click_to_pin': 'Click to pin',
         'hint_click_to_unpin': 'Click to unpin',
@@ -153,6 +159,12 @@ TRANSLATIONS = {
         # Language selection
         'language_settings': '语言设置',
         'interface_language': '界面语言:',
+        
+        # Debug/Logging options
+        'debug_options': '调试选项',
+        'log_level': '日志级别:',
+        'log_level_info': '信息',
+        'log_level_debug': '调试',
         
         # Tooltips
         'hint_click_to_pin': '点击固定',

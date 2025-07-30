@@ -5,6 +5,7 @@ from PyQt6.QtGui import QAction, QKeySequence, QActionGroup, QFont
 from src.image_viewer import ImageViewer, DisplayMode
 from src.music_player import MusicPlayer
 from src.translations import tr, init_language, get_language, set_language
+from src.logger import warning, error
 import os
 import json
 import subprocess
@@ -233,7 +234,7 @@ class MainWindow(QMainWindow):
                     self.music_timer.timeout.connect(self.music_player.check_music_end)
                     self.music_timer.start(1000)  # Check every second
             except Exception as e:
-                print(f"Warning: Could not initialize music player: {e}")
+                warning(f"Could not initialize music player: {e}")
                 # Continue without music
             
     def toggle_fullscreen(self):
@@ -383,14 +384,14 @@ class MainWindow(QMainWindow):
         try:
             subprocess.run(['open', '-R', file_path])
         except Exception as e:
-            print(f"Error opening in Finder: {e}")
+            error(f"Error opening in Finder: {e}")
     
     def open_in_preview(self, file_path):
         """Open file in Preview"""
         try:
             subprocess.run(['open', file_path])
         except Exception as e:
-            print(f"Error opening in Preview: {e}")
+            error(f"Error opening in Preview: {e}")
     
     def remove_from_favorites(self, file_path):
         """Remove an image from favorites"""
@@ -448,7 +449,7 @@ class MainWindow(QMainWindow):
                 # Dedicated slot was enabled but not enough favorites, disable it
                 self.image_viewer.dedicated_slot_enabled = False
         except Exception as e:
-            print(f"Error loading favorites: {e}")
+            error(f"Error loading favorites: {e}")
     
     def save_favorites_settings(self):
         """Save favorites and dedicated slot settings"""

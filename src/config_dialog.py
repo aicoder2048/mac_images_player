@@ -309,6 +309,35 @@ class ConfigDialog(QDialog):
         lang_row.addStretch()
         count_layout.addLayout(lang_row)
         
+        # Debug options
+        debug_separator = QLabel("")
+        debug_separator.setStyleSheet("margin-top: 15px;")
+        count_layout.addWidget(debug_separator)
+        
+        debug_label = QLabel(tr('debug_options'))
+        debug_label.setStyleSheet("font-weight: bold;")
+        count_layout.addWidget(debug_label)
+        
+        debug_row = QHBoxLayout()
+        log_level_label = QLabel(tr('log_level'))
+        debug_row.addWidget(log_level_label)
+        
+        self.log_level_combo = QComboBox()
+        self.log_level_combo.addItem(tr('log_level_info'), 'INFO')
+        self.log_level_combo.addItem(tr('log_level_debug'), 'DEBUG')
+        
+        # Load saved log level or default to INFO
+        saved_log_level = self.settings.value('log_level', 'INFO')
+        for i in range(self.log_level_combo.count()):
+            if self.log_level_combo.itemData(i) == saved_log_level:
+                self.log_level_combo.setCurrentIndex(i)
+                break
+        
+        self.log_level_combo.currentTextChanged.connect(self.on_log_level_changed)
+        debug_row.addWidget(self.log_level_combo)
+        debug_row.addStretch()
+        count_layout.addLayout(debug_row)
+        
         self.count_group.setLayout(count_layout)
         
         # Buttons
@@ -631,6 +660,11 @@ class ConfigDialog(QDialog):
         """Handle landscape timing change"""
         self.settings.setValue('landscape_timing', text)
         
+    def on_log_level_changed(self, text):
+        """Handle log level change"""
+        log_level = self.log_level_combo.currentData()
+        self.settings.setValue('log_level', log_level)
+        
     def on_language_changed(self, button_id):
         """Handle language change"""
         if button_id == 0:  # English
@@ -677,6 +711,16 @@ class ConfigDialog(QDialog):
         # Update radio buttons
         self.english_radio.setText(tr('english'))
         self.chinese_radio.setText(tr('chinese'))
+        
+        # Update debug options (if they exist)
+        if hasattr(self, 'log_level_combo'):
+            # Update combo box items
+            for i in range(self.log_level_combo.count()):
+                item_data = self.log_level_combo.itemData(i)
+                if item_data == 'INFO':
+                    self.log_level_combo.setItemText(i, tr('log_level_info'))
+                elif item_data == 'DEBUG':
+                    self.log_level_combo.setItemText(i, tr('log_level_debug'))
         
         # Update combo box placeholder text
         if self.music_combo.count() == 1 and self.music_combo.currentData() is None:
@@ -745,7 +789,8 @@ class ConfigDialog(QDialog):
             'music_file': self.music_file,
             'image_count': self.image_count,
             'portrait_timing': self.portrait_timing_combo.currentText(),
-            'landscape_timing': self.landscape_timing_combo.currentText()
+            'landscape_timing': self.landscape_timing_combo.currentText(),
+            'log_level': self.log_level_combo.currentData()
         }
         
     def load_history(self, key):

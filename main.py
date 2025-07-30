@@ -10,6 +10,7 @@ from PyQt6.QtCore import qInstallMessageHandler, QtMsgType
 from src.config_dialog import ConfigDialog
 from src.main_window import MainWindow
 from src.translations import init_language
+from src.logger import set_log_level, info
 
 
 def qt_message_handler(mode, context, message):
@@ -40,6 +41,11 @@ def main():
     config_dialog = ConfigDialog()
     if config_dialog.exec() == ConfigDialog.DialogCode.Accepted:
         config = config_dialog.get_config()
+        
+        # Initialize logger with selected level
+        log_level = config.get('log_level', 'INFO')
+        set_log_level(log_level)
+        info(f"Reel 77 starting with log level: {log_level}")
         
         # Create and show main window
         main_window = MainWindow(config)

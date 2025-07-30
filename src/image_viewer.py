@@ -15,6 +15,7 @@ from utils.image_utils import (get_image_files, get_image_files_from_dirs,
                               load_and_scale_image, get_random_images, 
                               calculate_image_dimensions)
 from src.translations import tr
+from src.logger import debug, info, warning, error
 
 
 class DisplayMode(Enum):
@@ -288,7 +289,7 @@ class ImageSlot(QFrame):
             return
             
         if self.is_transitioning:
-            # print(f"[DEBUG] Image dropped during transition: {os.path.basename(image_path)}")
+            debug(f"Image dropped during transition: {os.path.basename(image_path)}")
             return
             
         self.current_image_path = image_path
@@ -754,11 +755,11 @@ class ImageViewer(QWidget):
         
         # 检查是否为landscape并通过锁系统
         if self.is_landscape_image(image_path):
-            print(f"[DEBUG] Initial image {os.path.basename(image_path)} is landscape in slot {index}")
+            debug(f"Initial image {os.path.basename(image_path)} is landscape in slot {index}")
             # 收藏专栏使用优先级
             priority = (index == 0 and self.dedicated_slot_enabled)
             if self.acquire_landscape_lock(index, priority=priority):
-                print(f"[DEBUG] Slot {index} acquired lock for initial landscape")
+                debug(f"Slot {index} acquired lock for initial landscape")
                 # 成功获取锁，显示landscape并开始预览流程
                 pixmap = self.load_image_for_display(image_path)
                 if pixmap:
@@ -771,14 +772,14 @@ class ImageViewer(QWidget):
                         self.image_slots[index].set_favorited(True)
                 return
             else:
-                print(f"[DEBUG] Slot {index} failed to acquire lock, selecting portrait instead")
+                debug(f"Slot {index} failed to acquire lock, selecting portrait instead")
                 # 获取锁失败，重新选择portrait图片
                 portrait_imgs = [img for img in self.image_files 
                                if self.is_portrait_image(img) and img != original_image]
                 if portrait_imgs:
                     image_path = random.choice(portrait_imgs)
                     self.current_images[index] = image_path
-                    print(f"[DEBUG] Slot {index} switched to portrait: {os.path.basename(image_path)}")
+                    debug(f"Slot {index} switched to portrait: {os.path.basename(image_path)}")
         
         # 显示最终图片（portrait或获得锁的landscape已经显示了）
         pixmap = self.load_image_for_display(image_path)
@@ -1015,19 +1016,19 @@ class ImageViewer(QWidget):
                     else:
                         self.portrait_images.append(img_path)
             except Exception as e:
-                print(f"Error checking image {img_path}: {e}")
+                error(f"Error checking image {img_path}: {e}")
                 # Assume portrait if can't determine
                 self.portrait_images.append(img_path)
                 
-        print(f"Total images: {len(self.image_files)} ({len(self.portrait_images)} portrait, {len(self.landscape_images)} landscape)")
-        print("Using true random selection from all images")
+        info(f"Total images: {len(self.image_files)} ({len(self.portrait_images)} portrait, {len(self.landscape_images)} landscape)")
+        info("Using true random selection from all images")
         
         # Show source directories info
         if 'images_dirs' in self.config:
-            print(f"Images loaded from {len(self.config['images_dirs'])} directories:")
+            info(f"Images loaded from {len(self.config['images_dirs'])} directories:")
             for dir_path in self.config['images_dirs']:
                 dir_count = len([f for f in self.image_files if f.startswith(dir_path)])
-                print(f"  - {dir_path}: {dir_count} images")
+                info(f"  - {dir_path}: {dir_count} images")
         
     def on_cooldown_finished(self):
         """Called when mode switch cooldown expires"""
@@ -1048,37 +1049,37 @@ class ImageViewer(QWidget):
         current_time = time.time()
         if self.last_landscape_change_time > 0:
             time_since_last = current_time - self.last_landscape_change_time
-            # print(f"[DEBUG] Landscape timer expired at {current_time:.2f}, {time_since_last:.2f}s since image shown")
+            debug(f"Landscape timer expired at {current_time:.2f}, {time_since_last:.2f}s since image shown")
         
         # Check if landscape image is pinned
         if self.landscape_slot.is_pinned:
-            # print("[DEBUG] Landscape image is pinned, staying in landscape mode")
+            debug("Landscape image is pinned, staying in landscape mode")
             # Restart timer to check again later
             self.landscape_timer.setSingleShot(True)
             interval = self.get_random_landscape_interval()
-            # print(f"[DEBUG] Restarting timer with interval: {interval}ms")
+            debug(f"Restarting timer with interval: {interval}ms")
             self.landscape_timer.start(interval)
             return
         
         # Always switch back to portrait mode after showing a landscape image
-        # print("[DEBUG] Landscape display complete, returning to portrait mode")
+        debug("Landscape display complete, returning to portrait mode")
         self.switch_to_portrait_mode()
             
     def delayed_landscape_switch(self, image_path: str, slot_index: int):
         """Execute landscape switch after preview delay"""
-        print(f"[DEBUG] Executing delayed landscape switch from slot {slot_index}")
+        debug(f"Executing delayed landscape switch from slot {slot_index}")
         
         # 多重状态验证确保原子性
         if self.landscape_lock != slot_index:
-            print(f"Warning: Slot {slot_index} lost landscape lock during preview, aborting switch")
+            warning(f"Slot {slot_index} lost landscape lock during preview, aborting switch")
             return
             
         if self.landscape_lock_stage != 'preview':
-            print(f"Warning: Lock stage is {self.landscape_lock_stage}, expected 'preview', aborting switch")
+            warning(f"Lock stage is {self.landscape_lock_stage}, expected 'preview', aborting switch")
             return
             
         if slot_index >= len(self.image_slots) or self.image_slots[slot_index].current_image_path != image_path:
-            print(f"Warning: Slot {slot_index} image changed during preview, aborting switch")
+            warning(f"Slot {slot_index} image changed during preview, aborting switch")
             self.release_landscape_lock(slot_index)
             return
             
@@ -1089,11 +1090,11 @@ class ImageViewer(QWidget):
         if not self.transition_in_progress and self.current_layout_mode == LayoutMode.PORTRAIT:
             # 进入播放阶段，设置锁阶段为playing，防止被抢占
             self.landscape_lock_stage = 'playing'
-            print(f"[DEBUG] Slot {slot_index} entering landscape playing stage")
+            debug(f"Slot {slot_index} entering landscape playing stage")
             self.switch_to_landscape_mode_with_image(image_path, slot_index)
         else:
             # 条件不满足，释放锁并切换到portrait
-            print(f"[DEBUG] Slot {slot_index} landscape switch conditions not met (transition: {self.transition_in_progress}, mode: {self.current_layout_mode})")
+            debug(f"Slot {slot_index} landscape switch conditions not met (transition: {self.transition_in_progress}, mode: {self.current_layout_mode})")
             self.release_landscape_lock(slot_index)
             self.force_slot_to_portrait(slot_index)
     
@@ -1132,7 +1133,7 @@ class ImageViewer(QWidget):
         """获取landscape锁，支持优先级和抢占机制"""
         # 防止并发锁获取
         if self._acquiring_lock:
-            print(f"[DEBUG] Slot {slot_index} blocked by concurrent lock acquisition")
+            debug(f"Slot {slot_index} blocked by concurrent lock acquisition")
             return False
             
         self._acquiring_lock = True
@@ -1142,7 +1143,7 @@ class ImageViewer(QWidget):
             if (self.current_layout_mode != LayoutMode.PORTRAIT or
                 self.transition_in_progress or
                 slot_index == self.last_landscape_slot):
-                print(f"[DEBUG] Slot {slot_index} lock acquisition failed - basic conditions not met")
+                debug(f"Slot {slot_index} lock acquisition failed - basic conditions not met")
                 return False
             
             # 如果没有锁被持有，直接获取
@@ -1152,11 +1153,11 @@ class ImageViewer(QWidget):
             
             # 如果有锁被持有，检查是否可以抢占
             if priority and self._can_preempt(slot_index):
-                print(f"[DEBUG] Slot {slot_index} (favorites) preempting slot {self.landscape_lock}")
+                debug(f"Slot {slot_index} (favorites) preempting slot {self.landscape_lock}")
                 self._preempt_lock(slot_index)
                 return True
             
-            print(f"[DEBUG] Slot {slot_index} lock acquisition failed - lock held by slot {self.landscape_lock}")
+            debug(f"Slot {slot_index} lock acquisition failed - lock held by slot {self.landscape_lock}")
             return False
             
         finally:
@@ -1169,7 +1170,7 @@ class ImageViewer(QWidget):
         self.landscape_lock_stage = 'preview'
         self.last_landscape_slot = slot_index
         
-        print(f"[DEBUG] Slot {slot_index} successfully acquired landscape lock")
+        debug(f"Slot {slot_index} successfully acquired landscape lock")
         
         # 设置超时自动释放
         QTimer.singleShot(self.landscape_lock_timeout, 
@@ -1184,7 +1185,7 @@ class ImageViewer(QWidget):
         # 检查抢占冷却
         current_time = time.time() * 1000
         if current_time - self.last_preemption_time < self.preemption_cooldown:
-            print(f"[DEBUG] Preemption blocked by cooldown")
+            debug(f"Preemption blocked by cooldown")
             return False
         
         # 只能抢占普通专栏（非收藏专栏）
@@ -1193,13 +1194,13 @@ class ImageViewer(QWidget):
         
         # 只能在预览阶段抢占
         if self.landscape_lock_stage != 'preview':
-            print(f"[DEBUG] Cannot preempt - current stage: {self.landscape_lock_stage}")
+            debug(f"Cannot preempt - current stage: {self.landscape_lock_stage}")
             return False
         
         # 检查预览时间是否还在允许范围内
         elapsed_time = (time.time() - self.landscape_lock_time) * 1000
         if elapsed_time >= self.preview_stage_duration:
-            print(f"[DEBUG] Cannot preempt - preview stage expired ({elapsed_time:.0f}ms)")
+            debug(f"Cannot preempt - preview stage expired ({elapsed_time:.0f}ms)")
             return False
         
         return True
@@ -1236,7 +1237,7 @@ class ImageViewer(QWidget):
         
         # 启动定时器
         timer.start(delay_ms)
-        print(f"[DEBUG] Scheduled landscape switch for slot {slot_index} in {delay_ms}ms")
+        debug(f"Scheduled landscape switch for slot {slot_index} in {delay_ms}ms")
     
     def _cancel_pending_task(self, slot_index: int):
         """取消指定槽位的待执行任务"""
@@ -1244,7 +1245,7 @@ class ImageViewer(QWidget):
             timer = self.pending_landscape_tasks[slot_index]
             if timer.isActive():
                 timer.stop()
-                print(f"[DEBUG] Cancelled pending landscape task for slot {slot_index}")
+                debug(f"Cancelled pending landscape task for slot {slot_index}")
             del self.pending_landscape_tasks[slot_index]
     
     def _execute_delayed_landscape_switch(self, slot_index: int, image_path: str):
@@ -1259,10 +1260,10 @@ class ImageViewer(QWidget):
     def release_landscape_lock(self, expected_holder=None) -> bool:
         """安全地释放landscape锁"""
         if expected_holder is not None and self.landscape_lock != expected_holder:
-            print(f"Warning: Slot {expected_holder} trying to release lock held by {self.landscape_lock}")
+            warning(f"Slot {expected_holder} trying to release lock held by {self.landscape_lock}")
             return False
             
-        print(f"[DEBUG] Releasing landscape lock from slot {self.landscape_lock}")
+        debug(f"Releasing landscape lock from slot {self.landscape_lock}")
         self.landscape_lock = None
         self.landscape_lock_time = None
         self.landscape_lock_stage = None
@@ -1274,7 +1275,7 @@ class ImageViewer(QWidget):
     def force_release_lock(self, original_holder: int):
         """强制释放超时的锁并清除landscape显示"""
         if self.landscape_lock == original_holder:
-            print(f"Force releasing timed-out lock from slot {original_holder}")
+            debug(f"Force releasing timed-out lock from slot {original_holder}")
             
             # 立即清除该槽位的landscape显示
             if original_holder < len(self.image_slots):
@@ -1315,7 +1316,7 @@ class ImageViewer(QWidget):
             
     def force_slot_to_portrait(self, slot_index: int):
         """强制槽位切换到portrait图片"""
-        print(f"[DEBUG] Forcing slot {slot_index} to switch to portrait")
+        debug(f"Forcing slot {slot_index} to switch to portrait")
         
         # 取消该槽位的待执行landscape任务
         self._cancel_pending_task(slot_index)
@@ -1335,7 +1336,7 @@ class ImageViewer(QWidget):
                 
                 # 不在这里重启定时器 - 将在landscape流程完全结束后重启
                 self.timers[slot_index].stop() 
-                print(f"[DEBUG] Slot {slot_index} successfully switched to portrait: {os.path.basename(portrait_img)}, timer will restart after landscape flow completes")
+                debug(f"Slot {slot_index} successfully switched to portrait: {os.path.basename(portrait_img)}, timer will restart after landscape flow completes")
             
     def can_slot_use_global_queue(self, slot_index: int) -> bool:
         """检查槽位是否可以使用全局landscape队列系统"""
@@ -1381,7 +1382,7 @@ class ImageViewer(QWidget):
             })
             timer.stop()
             
-        # print(f"[DEBUG] Saved portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
+        debug(f"Saved portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
         
         # Start progressive transition animation before switching layout
         if source_slot_index >= 0 and source_slot_index < len(self.image_slots):
@@ -1473,7 +1474,7 @@ class ImageViewer(QWidget):
         # Load and display a landscape image
         if self.landscape_images:
             image_path = random.choice(self.landscape_images)
-            # print(f"[DEBUG] Initial landscape image: {os.path.basename(image_path)}")
+            debug(f"Initial landscape image: {os.path.basename(image_path)}")
             pixmap = self.load_landscape_image(image_path)
             if pixmap:
                 self.landscape_slot.show_image(image_path, pixmap, initial=True)
@@ -1492,9 +1493,9 @@ class ImageViewer(QWidget):
         self.landscape_timer.timeout.connect(self.change_landscape_image)
         self.landscape_timer.setSingleShot(True)  # Single shot - only fire once
         interval = self.get_random_landscape_interval()
-        # print(f"[DEBUG] Starting landscape timer with interval: {interval}ms (will switch to portrait after)")
+        debug(f"Starting landscape timer with interval: {interval}ms (will switch to portrait after)")
         self.landscape_timer.start(interval)
-        # print(f"[DEBUG] Timer started successfully: {self.landscape_timer.isActive()}, single shot: {self.landscape_timer.isSingleShot()}")
+        debug(f"Timer started successfully: {self.landscape_timer.isActive()}, single shot: {self.landscape_timer.isSingleShot()}")
         
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
@@ -1592,24 +1593,24 @@ class ImageViewer(QWidget):
         
         # Restore portrait timer states if available, otherwise use new random intervals
         if self.portrait_timer_states and len(self.portrait_timer_states) == len(self.timers):
-            # print(f"[DEBUG] Restoring portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
+            debug(f"Restoring portrait timer states: {[(s['index'], s['remaining'], s['was_active']) for s in self.portrait_timer_states]}")
             for state in self.portrait_timer_states:
                 i = state['index']
                 if i < len(self.timers) and state['was_active']:
                     # Use the saved remaining time, but ensure it's reasonable
                     remaining = max(state['remaining'], 1000)  # At least 1 second
                     self.timers[i].start(remaining)
-                    # print(f"[DEBUG] Restored timer {i} with {remaining}ms remaining")
+                    debug(f"Restored timer {i} with {remaining}ms remaining")
                 elif i < len(self.timers):
                     # Timer wasn't active, start with new random interval
                     interval = self.get_random_portrait_interval()
                     self.timers[i].start(interval)
-                    # print(f"[DEBUG] Started new timer {i} with {interval}ms")
+                    debug(f"Started new timer {i} with {interval}ms")
             # Clear saved states
             self.portrait_timer_states = []
         else:
             # No saved states or mismatch, use new random intervals
-            # print("[DEBUG] No saved timer states, using new random intervals")
+            debug("No saved timer states, using new random intervals")
             for i in range(len(self.timers)):
                 interval = self.get_random_portrait_interval()
                 self.timers[i].start(interval)
@@ -1624,7 +1625,7 @@ class ImageViewer(QWidget):
             if not self.image_slots[locked_slot].is_pinned:
                 interval = self.get_random_portrait_interval()
                 self.timers[locked_slot].start(interval)
-                print(f"[DEBUG] Restarted timer for landscape slot {locked_slot} with {interval}ms")
+                debug(f"Restarted timer for landscape slot {locked_slot} with {interval}ms")
         
         # Update the slot that triggered landscape mode (if different from locked slot)
         if (self.landscape_source_slot_index >= 0 and 
@@ -1640,7 +1641,7 @@ class ImageViewer(QWidget):
         
         # 释放landscape锁（最后执行，确保所有清理完成）
         if self.landscape_lock is not None:
-            print(f"[DEBUG] Releasing landscape lock from slot {self.landscape_lock} after complete transition")
+            debug(f"Releasing landscape lock from slot {self.landscape_lock} after complete transition")
             self.release_landscape_lock(self.landscape_lock)
         
     @pyqtSlot(int, str, bool)

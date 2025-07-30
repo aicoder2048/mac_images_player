@@ -2,6 +2,7 @@ import pygame
 import os
 import random
 from typing import List, Optional
+from src.logger import error
 
 
 class MusicPlayer:
@@ -64,7 +65,7 @@ class MusicPlayer:
                 self.music_ended = False
                 self.is_paused = False
             except pygame.error as e:
-                print(f"Error playing {self.music_files[self.current_index]}: {e}")
+                error(f"Error playing {self.music_files[self.current_index]}: {e}")
                 self.next_track()
                 
     def next_track(self):
