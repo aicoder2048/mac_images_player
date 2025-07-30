@@ -1618,23 +1618,45 @@ class ImageViewer(QWidget):
         # Clear transition flag first so new landscape images can be detected
         self.transition_in_progress = False
         
-        # 重新启动持有landscape锁的槽位的定时器（landscape流程完全结束）
+        # Update landscape播放槽位 - 强制更换图片避免重复显示
         locked_slot = self.landscape_lock
-        if locked_slot is not None and locked_slot < len(self.timers):
-            # 确保该槽位的定时器重新启动
+        if (self.landscape_source_slot_index >= 0 and 
+            self.landscape_source_slot_index < len(self.image_slots)):
+            
+            if self.landscape_source_slot_index == locked_slot:
+                # 正常情况：同一槽位触发并播放了landscape
+                if not self.image_slots[locked_slot].is_pinned:
+                    debug(f"Updating landscape source slot {locked_slot} (same as locked slot)")
+                    # 强制更换图片，避免继续显示同一张landscape
+                    self.change_single_image(locked_slot)
+                    # 然后重新启动定时器
+                    interval = self.get_random_portrait_interval()
+                    self.timers[locked_slot].start(interval)
+                    debug(f"Restarted timer for updated slot {locked_slot} with {interval}ms")
+                else:
+                    # 如果是固定的，只启动定时器
+                    interval = self.get_random_portrait_interval()
+                    self.timers[locked_slot].start(interval)
+                    debug(f"Restarted timer for pinned slot {locked_slot} with {interval}ms")
+            else:
+                # 异常情况：不同槽位（可能是抢占场景）
+                debug(f"Updating different landscape source slot {self.landscape_source_slot_index} (locked slot: {locked_slot})")
+                # 处理触发landscape的槽位
+                self.timers[self.landscape_source_slot_index].stop()
+                self.change_single_image(self.landscape_source_slot_index)
+                
+                # 处理持有锁的槽位
+                if (locked_slot is not None and locked_slot < len(self.timers) and 
+                    not self.image_slots[locked_slot].is_pinned):
+                    interval = self.get_random_portrait_interval()
+                    self.timers[locked_slot].start(interval)
+                    debug(f"Restarted timer for locked slot {locked_slot} with {interval}ms")
+        elif locked_slot is not None and locked_slot < len(self.timers):
+            # 备用逻辑：如果没有记录source_slot_index，至少重启locked_slot的定时器
             if not self.image_slots[locked_slot].is_pinned:
                 interval = self.get_random_portrait_interval()
                 self.timers[locked_slot].start(interval)
                 debug(f"Restarted timer for landscape slot {locked_slot} with {interval}ms")
-        
-        # Update the slot that triggered landscape mode (if different from locked slot)
-        if (self.landscape_source_slot_index >= 0 and 
-            self.landscape_source_slot_index < len(self.image_slots) and
-            self.landscape_source_slot_index != locked_slot):
-            # Stop its timer first
-            self.timers[self.landscape_source_slot_index].stop()
-            # Trigger immediate update
-            self.change_single_image(self.landscape_source_slot_index)
             
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
