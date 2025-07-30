@@ -1657,6 +1657,15 @@ class ImageViewer(QWidget):
                 interval = self.get_random_portrait_interval()
                 self.timers[locked_slot].start(interval)
                 debug(f"Restarted timer for landscape slot {locked_slot} with {interval}ms")
+                
+        # 确保所有被强制切换到portrait的槽位的定时器都重新启动
+        # 这是为了处理在landscape流程中被force_slot_to_portrait停止的定时器
+        for i in range(len(self.timers)):
+            if not self.timers[i].isActive() and not self.image_slots[i].is_pinned:
+                debug(f"Found inactive timer for slot {i}, restarting")
+                interval = self.get_random_portrait_interval()
+                self.timers[i].start(interval)
+                debug(f"Restarted inactive timer {i} with {interval}ms")
             
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
