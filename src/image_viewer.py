@@ -3,6 +3,7 @@ from PyQt6.QtCore import QTimer, Qt, pyqtSignal, pyqtSlot, QSize, QPropertyAnima
 from PyQt6.QtGui import QPixmap, QPalette, QColor, QTransform, QPainter, QFont, QPen, QBrush, QImage
 from typing import List, Optional, Tuple
 from enum import Enum
+from collections import deque
 import sys
 import random
 import time
@@ -562,6 +563,30 @@ class ImageViewer(QWidget):
         # Preview mode tracking
         self.landscape_preview_pending = False  # Flag to prevent duplicate switches
         
+        # Landscape播放管理系统
+        self.landscape_lock = None  # 当前持锁的slot_index
+        self.landscape_lock_time = None  # 锁获取时间
+        self.landscape_lock_stage = None  # 锁阶段: 'preview' 或 'playing'
+        self.landscape_queue = deque()  # 等待播放的landscape图片队列
+        self.last_landscape_slot = None  # 上一个播放landscape的槽位
+        self.landscape_lock_timeout = 15000  # 15秒超时
+        
+        # 抢占机制相关
+        self.last_preemption_time = 0  # 上次抢占时间
+        self.preemption_cooldown = 5000  # 抢占冷却时间5秒
+        self.preview_stage_duration = 2000  # 预览阶段持续时间2秒
+        
+        # 超时检查定时器
+        self.lock_timeout_timer = QTimer()
+        self.lock_timeout_timer.timeout.connect(self.check_lock_timeout)
+        self.lock_timeout_timer.start(1000)  # 每秒检查
+        
+        # 并发保护标志
+        self._acquiring_lock = False
+        
+        # 待执行任务跟踪 - 用于取消delayed_landscape_switch
+        self.pending_landscape_tasks = {}  # slot_index -> QTimer object
+        
         self.init_ui()
         
     def parse_timing_range(self, timing_string: str) -> Tuple[int, int]:
@@ -723,8 +748,39 @@ class ImageViewer(QWidget):
                 self.landscape_slot.setMaximumHeight(self.landscape_height + 10)
             
     def display_initial_image(self, index: int, image_path: str):
-        """Display initial image at given index"""
+        """Display initial image with landscape lock check"""
+        original_image = image_path
         self.current_images[index] = image_path
+        
+        # 检查是否为landscape并通过锁系统
+        if self.is_landscape_image(image_path):
+            print(f"[DEBUG] Initial image {os.path.basename(image_path)} is landscape in slot {index}")
+            # 收藏专栏使用优先级
+            priority = (index == 0 and self.dedicated_slot_enabled)
+            if self.acquire_landscape_lock(index, priority=priority):
+                print(f"[DEBUG] Slot {index} acquired lock for initial landscape")
+                # 成功获取锁，显示landscape并开始预览流程
+                pixmap = self.load_image_for_display(image_path)
+                if pixmap:
+                    self.image_slots[index].show_image(image_path, pixmap, initial=True)
+                    # 初始landscape也需要预览和切换流程
+                    self.landscape_preview_pending = True
+                    self._schedule_landscape_switch(index, image_path)
+                    # Set favorite state if applicable
+                    if image_path in self.favorites_list:
+                        self.image_slots[index].set_favorited(True)
+                return
+            else:
+                print(f"[DEBUG] Slot {index} failed to acquire lock, selecting portrait instead")
+                # 获取锁失败，重新选择portrait图片
+                portrait_imgs = [img for img in self.image_files 
+                               if self.is_portrait_image(img) and img != original_image]
+                if portrait_imgs:
+                    image_path = random.choice(portrait_imgs)
+                    self.current_images[index] = image_path
+                    print(f"[DEBUG] Slot {index} switched to portrait: {os.path.basename(image_path)}")
+        
+        # 显示最终图片（portrait或获得锁的landscape已经显示了）
         pixmap = self.load_image_for_display(image_path)
         if pixmap:
             self.image_slots[index].show_image(image_path, pixmap, initial=True)
@@ -806,53 +862,108 @@ class ImageViewer(QWidget):
             self.timers[index].start(self.get_random_portrait_interval())
             return
             
-        # Handle dedicated favorites slot (slot 0)
+        # 新的landscape管理系统
+        new_image = None
+        
+        # 收藏专栏特殊处理
         if index == 0 and self.dedicated_slot_enabled and self.favorites_list:
-            # Only select from favorites
+            # 只从收藏中选择
             available = [img for img in self.favorites_list if img not in self.current_images]
             if not available:
-                # If all favorites are already displayed, allow repeats but not the current one
                 available = [img for img in self.favorites_list if img != self.current_images[index]]
+            
+            if available:
+                new_image = random.choice(available)
+                self.current_images[index] = new_image
+                
+                # 收藏专栏的landscape处理（独立于全局系统）
+                if self.is_landscape_image(new_image):
+                    # 直接尝试获取锁，收藏专栏使用优先级
+                    if self.acquire_landscape_lock(0, priority=True):
+                        # 成功获取锁，开始landscape预览流程
+                        self.landscape_preview_pending = True
+                        pixmap = self.load_image_for_display(new_image)
+                        if pixmap:
+                            self.image_slots[index].show_image(new_image, pixmap, initial=False)
+                            self.images_changed.emit()
+                        
+                        self._schedule_landscape_switch(index, new_image)
+                        # 停止定时器，直到landscape流程完全结束
+                        self.timers[index].stop()
+                        return
+                    else:
+                        # 获取锁失败，强制选择portrait图片
+                        portrait_imgs = [img for img in available if self.is_portrait_image(img)]
+                        if portrait_imgs:
+                            new_image = random.choice(portrait_imgs)
+                            self.current_images[index] = new_image
         else:
-            # Get available images from ALL images (not just portrait)
+            # 普通槽位处理
+            # 1. 优先检查队列中的landscape
+            if self.landscape_queue:
+                landscape_img = self.landscape_queue.popleft()
+                if os.path.exists(landscape_img):
+                    # 直接尝试获取锁
+                    if self.acquire_landscape_lock(index):
+                        new_image = landscape_img
+                        self.current_images[index] = new_image
+                        
+                        # 开始landscape预览
+                        self.landscape_preview_pending = True
+                        pixmap = self.load_image_for_display(new_image)
+                        if pixmap:
+                            self.image_slots[index].show_image(new_image, pixmap, initial=False)
+                            self.images_changed.emit()
+                        
+                        self._schedule_landscape_switch(index, new_image)
+                        # 停止定时器，直到landscape流程完全结束
+                        self.timers[index].stop()
+                        return
+                    else:
+                        # 获取锁失败，重新放回队列
+                        self.landscape_queue.appendleft(landscape_img)
+            
+            # 2. 随机选择新图片
             available = [img for img in self.image_files if img not in self.current_images]
             if not available:
                 available = [img for img in self.image_files if img != self.current_images[index]]
             
-        if available:
-            new_image = random.choice(available)
-            self.current_images[index] = new_image
-            
-            # Check if this is a landscape image and we should switch modes
-            if self.current_layout_mode == LayoutMode.PORTRAIT:
-                try:
-                    with Image.open(new_image) as img:
-                        width, height = img.size
-                        if width > height and not self.transition_in_progress and not self.landscape_preview_pending:
-                            # This is a landscape image, show preview first
-                            # print(f"[DEBUG] Landscape image detected in slot {index}, showing preview")
-                            self.landscape_preview_pending = True
-                            
-                            # Show the landscape image in the slot as preview
-                            pixmap = self.load_image_for_display(new_image)
-                            if pixmap:
-                                self.image_slots[index].show_image(new_image, pixmap, initial=False)
-                                self.images_changed.emit()
-                            
-                            # Schedule landscape mode switch after 2 seconds
-                            QTimer.singleShot(2000, lambda: self.delayed_landscape_switch(new_image, index))
-                            
-                            # Keep timer running with a longer interval to prevent changes during preview
-                            self.timers[index].stop()
-                            self.timers[index].start(3000)  # 3 seconds to cover the delay
-                            return
-                except Exception as e:
-                    print(f"Error checking image orientation: {e}")
-            
+            if available:
+                new_image = random.choice(available)
+                self.current_images[index] = new_image
+                
+                # 3. 处理新选择的landscape图片
+                if self.is_landscape_image(new_image):
+                    # 直接尝试获取锁
+                    if self.acquire_landscape_lock(index):
+                        # 成功获取锁，立即播放
+                        self.landscape_preview_pending = True
+                        pixmap = self.load_image_for_display(new_image)
+                        if pixmap:
+                            self.image_slots[index].show_image(new_image, pixmap, initial=False)
+                            self.images_changed.emit()
+                        
+                        self._schedule_landscape_switch(index, new_image)
+                        # 停止定时器，直到landscape流程完全结束
+                        self.timers[index].stop()
+                        return
+                    else:
+                        # 获取锁失败，加入队列并选择portrait
+                        if len(self.landscape_queue) < 5:
+                            self.landscape_queue.append(new_image)
+                        
+                        # 重新选择portrait图片
+                        portrait_img = self.get_random_portrait_image(self.current_images)
+                        if portrait_img:
+                            new_image = portrait_img
+                            self.current_images[index] = new_image
+        
+        # 显示最终选择的图片
+        if new_image:
             pixmap = self.load_image_for_display(new_image)
             if pixmap:
                 self.image_slots[index].show_image(new_image, pixmap, initial=False)
-                # Update favorite state if this image is in favorites
+                # Update favorite state
                 if new_image in self.favorites_list:
                     self.image_slots[index].set_favorited(True)
                 else:
@@ -955,14 +1066,289 @@ class ImageViewer(QWidget):
             
     def delayed_landscape_switch(self, image_path: str, slot_index: int):
         """Execute landscape switch after preview delay"""
-        # print(f"[DEBUG] Executing delayed landscape switch from slot {slot_index}")
+        print(f"[DEBUG] Executing delayed landscape switch from slot {slot_index}")
+        
+        # 多重状态验证确保原子性
+        if self.landscape_lock != slot_index:
+            print(f"Warning: Slot {slot_index} lost landscape lock during preview, aborting switch")
+            return
+            
+        if self.landscape_lock_stage != 'preview':
+            print(f"Warning: Lock stage is {self.landscape_lock_stage}, expected 'preview', aborting switch")
+            return
+            
+        if slot_index >= len(self.image_slots) or self.image_slots[slot_index].current_image_path != image_path:
+            print(f"Warning: Slot {slot_index} image changed during preview, aborting switch")
+            self.release_landscape_lock(slot_index)
+            return
+            
+        # 清除预览状态
         self.landscape_preview_pending = False
+        
+        # 验证切换条件
         if not self.transition_in_progress and self.current_layout_mode == LayoutMode.PORTRAIT:
+            # 进入播放阶段，设置锁阶段为playing，防止被抢占
+            self.landscape_lock_stage = 'playing'
+            print(f"[DEBUG] Slot {slot_index} entering landscape playing stage")
             self.switch_to_landscape_mode_with_image(image_path, slot_index)
+        else:
+            # 条件不满足，释放锁并切换到portrait
+            print(f"[DEBUG] Slot {slot_index} landscape switch conditions not met (transition: {self.transition_in_progress}, mode: {self.current_layout_mode})")
+            self.release_landscape_lock(slot_index)
+            self.force_slot_to_portrait(slot_index)
     
     def load_landscape_image(self, image_path: str) -> Optional[QPixmap]:
         """Load and scale landscape image"""
         return load_and_scale_image(image_path, (self.landscape_width, self.landscape_height), maintain_aspect=True)
+    
+    def is_portrait_image(self, image_path: str) -> bool:
+        """Check if image is portrait (height >= width)"""
+        try:
+            with Image.open(image_path) as img:
+                width, height = img.size
+                return height >= width  # Portrait or square
+        except Exception:
+            return True  # Default to portrait if can't check
+            
+    def is_landscape_image(self, image_path: str) -> bool:
+        """Check if image is landscape (width > height)"""
+        try:
+            with Image.open(image_path) as img:
+                width, height = img.size
+                return width > height
+        except Exception:
+            return False  # Default to portrait if can't check
+            
+    def get_random_portrait_image(self, exclude_current=None) -> Optional[str]:
+        """Get a random portrait image, excluding current images"""
+        portrait_images = [img for img in self.image_files 
+                          if self.is_portrait_image(img)]
+        if exclude_current:
+            portrait_images = [img for img in portrait_images 
+                             if img not in exclude_current]
+        return random.choice(portrait_images) if portrait_images else None
+        
+    def acquire_landscape_lock(self, slot_index: int, priority: bool = False) -> bool:
+        """获取landscape锁，支持优先级和抢占机制"""
+        # 防止并发锁获取
+        if self._acquiring_lock:
+            print(f"[DEBUG] Slot {slot_index} blocked by concurrent lock acquisition")
+            return False
+            
+        self._acquiring_lock = True
+        
+        try:
+            # 基本条件检查
+            if (self.current_layout_mode != LayoutMode.PORTRAIT or
+                self.transition_in_progress or
+                slot_index == self.last_landscape_slot):
+                print(f"[DEBUG] Slot {slot_index} lock acquisition failed - basic conditions not met")
+                return False
+            
+            # 如果没有锁被持有，直接获取
+            if self.landscape_lock is None:
+                self._grant_lock(slot_index)
+                return True
+            
+            # 如果有锁被持有，检查是否可以抢占
+            if priority and self._can_preempt(slot_index):
+                print(f"[DEBUG] Slot {slot_index} (favorites) preempting slot {self.landscape_lock}")
+                self._preempt_lock(slot_index)
+                return True
+            
+            print(f"[DEBUG] Slot {slot_index} lock acquisition failed - lock held by slot {self.landscape_lock}")
+            return False
+            
+        finally:
+            self._acquiring_lock = False
+    
+    def _grant_lock(self, slot_index: int):
+        """授予锁给指定槽位"""
+        self.landscape_lock = slot_index
+        self.landscape_lock_time = time.time()
+        self.landscape_lock_stage = 'preview'
+        self.last_landscape_slot = slot_index
+        
+        print(f"[DEBUG] Slot {slot_index} successfully acquired landscape lock")
+        
+        # 设置超时自动释放
+        QTimer.singleShot(self.landscape_lock_timeout, 
+                         lambda: self.force_release_lock(slot_index))
+    
+    def _can_preempt(self, slot_index: int) -> bool:
+        """检查是否可以抢占当前锁"""
+        # 只有收藏专栏可以抢占
+        if not (slot_index == 0 and self.dedicated_slot_enabled):
+            return False
+        
+        # 检查抢占冷却
+        current_time = time.time() * 1000
+        if current_time - self.last_preemption_time < self.preemption_cooldown:
+            print(f"[DEBUG] Preemption blocked by cooldown")
+            return False
+        
+        # 只能抢占普通专栏（非收藏专栏）
+        if self.landscape_lock == 0:
+            return False
+        
+        # 只能在预览阶段抢占
+        if self.landscape_lock_stage != 'preview':
+            print(f"[DEBUG] Cannot preempt - current stage: {self.landscape_lock_stage}")
+            return False
+        
+        # 检查预览时间是否还在允许范围内
+        elapsed_time = (time.time() - self.landscape_lock_time) * 1000
+        if elapsed_time >= self.preview_stage_duration:
+            print(f"[DEBUG] Cannot preempt - preview stage expired ({elapsed_time:.0f}ms)")
+            return False
+        
+        return True
+    
+    def _preempt_lock(self, slot_index: int):
+        """执行抢占操作"""
+        preempted_slot = self.landscape_lock
+        
+        # 清理被抢占槽位的状态
+        if preempted_slot < len(self.image_slots):
+            self.force_slot_to_portrait(preempted_slot)
+        
+        # 更新抢占时间
+        self.last_preemption_time = time.time() * 1000
+        
+        # 取消被抢占槽位的待执行任务
+        self._cancel_pending_task(preempted_slot)
+        
+        # 授予锁给新槽位
+        self._grant_lock(slot_index)
+    
+    def _schedule_landscape_switch(self, slot_index: int, image_path: str, delay_ms: int = 2000):
+        """安全地调度delayed_landscape_switch任务"""
+        # 先取消该槽位现有的待执行任务
+        self._cancel_pending_task(slot_index)
+        
+        # 创建新的定时器
+        timer = QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: self._execute_delayed_landscape_switch(slot_index, image_path))
+        
+        # 记录任务
+        self.pending_landscape_tasks[slot_index] = timer
+        
+        # 启动定时器
+        timer.start(delay_ms)
+        print(f"[DEBUG] Scheduled landscape switch for slot {slot_index} in {delay_ms}ms")
+    
+    def _cancel_pending_task(self, slot_index: int):
+        """取消指定槽位的待执行任务"""
+        if slot_index in self.pending_landscape_tasks:
+            timer = self.pending_landscape_tasks[slot_index]
+            if timer.isActive():
+                timer.stop()
+                print(f"[DEBUG] Cancelled pending landscape task for slot {slot_index}")
+            del self.pending_landscape_tasks[slot_index]
+    
+    def _execute_delayed_landscape_switch(self, slot_index: int, image_path: str):
+        """执行延迟的landscape切换"""
+        # 清理任务记录
+        if slot_index in self.pending_landscape_tasks:
+            del self.pending_landscape_tasks[slot_index]
+        
+        # 执行原有的delayed_landscape_switch逻辑
+        self.delayed_landscape_switch(image_path, slot_index)
+        
+    def release_landscape_lock(self, expected_holder=None) -> bool:
+        """安全地释放landscape锁"""
+        if expected_holder is not None and self.landscape_lock != expected_holder:
+            print(f"Warning: Slot {expected_holder} trying to release lock held by {self.landscape_lock}")
+            return False
+            
+        print(f"[DEBUG] Releasing landscape lock from slot {self.landscape_lock}")
+        self.landscape_lock = None
+        self.landscape_lock_time = None
+        self.landscape_lock_stage = None
+        
+        # 处理等待队列
+        self.process_landscape_queue()
+        return True
+        
+    def force_release_lock(self, original_holder: int):
+        """强制释放超时的锁并清除landscape显示"""
+        if self.landscape_lock == original_holder:
+            print(f"Force releasing timed-out lock from slot {original_holder}")
+            
+            # 立即清除该槽位的landscape显示
+            if original_holder < len(self.image_slots):
+                self.force_slot_to_portrait(original_holder)
+            
+            # 释放锁和相关状态
+            self.landscape_lock = None
+            self.landscape_lock_time = None
+            self.landscape_lock_stage = None
+            self.landscape_preview_pending = False
+            
+    def check_lock_timeout(self):
+        """检查锁是否超时"""
+        if (self.landscape_lock is not None and 
+            self.landscape_lock_time is not None):
+            elapsed = (time.time() - self.landscape_lock_time) * 1000
+            if elapsed > self.landscape_lock_timeout:
+                self.force_release_lock(self.landscape_lock)
+                
+    def process_landscape_queue(self):
+        """处理等待队列中的landscape图片"""
+        if not self.landscape_queue or self.landscape_lock is not None:
+            return
+            
+        # 找到一个合适的槽位来播放队列中的landscape
+        for i in range(len(self.image_slots)):
+            if (self.can_slot_use_global_queue(i) and 
+                not self.image_slots[i].is_pinned):
+                # 触发该槽位的更新
+                QTimer.singleShot(500, lambda idx=i: self.trigger_slot_update(idx))
+                break
+                
+    def trigger_slot_update(self, slot_index: int):
+        """触发指定槽位的图片更新"""
+        if slot_index < len(self.timers):
+            self.timers[slot_index].stop()
+            self.timers[slot_index].start(100)  # 快速触发
+            
+    def force_slot_to_portrait(self, slot_index: int):
+        """强制槽位切换到portrait图片"""
+        print(f"[DEBUG] Forcing slot {slot_index} to switch to portrait")
+        
+        # 取消该槽位的待执行landscape任务
+        self._cancel_pending_task(slot_index)
+        
+        # 选择一个portrait图片
+        portrait_img = self.get_random_portrait_image(self.current_images)
+        if portrait_img:
+            self.current_images[slot_index] = portrait_img
+            pixmap = self.load_image_for_display(portrait_img)
+            if pixmap:
+                self.image_slots[slot_index].show_image(portrait_img, pixmap, initial=False)
+                # 更新收藏状态
+                if portrait_img in self.favorites_list:
+                    self.image_slots[slot_index].set_favorited(True)
+                else:
+                    self.image_slots[slot_index].set_favorited(False)
+                
+                # 不在这里重启定时器 - 将在landscape流程完全结束后重启
+                self.timers[slot_index].stop() 
+                print(f"[DEBUG] Slot {slot_index} successfully switched to portrait: {os.path.basename(portrait_img)}, timer will restart after landscape flow completes")
+            
+    def can_slot_use_global_queue(self, slot_index: int) -> bool:
+        """检查槽位是否可以使用全局landscape队列系统"""
+        # 基本规则：不能连续在同一槽位播放
+        if slot_index == self.last_landscape_slot:
+            return False
+            
+        # 收藏专栏特殊处理
+        if slot_index == 0 and self.dedicated_slot_enabled:
+            # 收藏专栏不参与全局landscape队列系统
+            return False
+            
+        return True
         
     def debug_timer_status(self):
         """Debug timer status"""
@@ -1231,9 +1617,19 @@ class ImageViewer(QWidget):
         # Clear transition flag first so new landscape images can be detected
         self.transition_in_progress = False
         
-        # Update the slot that triggered landscape mode
-        if self.landscape_source_slot_index >= 0 and self.landscape_source_slot_index < len(self.image_slots):
-            # print(f"[DEBUG] Updating source slot {self.landscape_source_slot_index} that triggered landscape mode")
+        # 重新启动持有landscape锁的槽位的定时器（landscape流程完全结束）
+        locked_slot = self.landscape_lock
+        if locked_slot is not None and locked_slot < len(self.timers):
+            # 确保该槽位的定时器重新启动
+            if not self.image_slots[locked_slot].is_pinned:
+                interval = self.get_random_portrait_interval()
+                self.timers[locked_slot].start(interval)
+                print(f"[DEBUG] Restarted timer for landscape slot {locked_slot} with {interval}ms")
+        
+        # Update the slot that triggered landscape mode (if different from locked slot)
+        if (self.landscape_source_slot_index >= 0 and 
+            self.landscape_source_slot_index < len(self.image_slots) and
+            self.landscape_source_slot_index != locked_slot):
             # Stop its timer first
             self.timers[self.landscape_source_slot_index].stop()
             # Trigger immediate update
@@ -1241,6 +1637,11 @@ class ImageViewer(QWidget):
             
         # Start cooldown
         self.mode_switch_cooldown.start(self.cooldown_duration)
+        
+        # 释放landscape锁（最后执行，确保所有清理完成）
+        if self.landscape_lock is not None:
+            print(f"[DEBUG] Releasing landscape lock from slot {self.landscape_lock} after complete transition")
+            self.release_landscape_lock(self.landscape_lock)
         
     @pyqtSlot(int, str, bool)
     def on_favorite_toggled(self, slot_index: int, image_path: str, is_favorited: bool):
