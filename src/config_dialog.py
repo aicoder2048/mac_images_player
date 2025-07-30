@@ -134,7 +134,7 @@ class ConfigDialog(QDialog):
             QGroupBox {
                 font-weight: bold;
                 font-size: 15px;
-                color: #E0E0E0;
+                color: palette(windowText);
                 margin-top: 10px;
                 padding-top: 8px;
             }
@@ -203,7 +203,7 @@ class ConfigDialog(QDialog):
             QGroupBox {
                 font-weight: bold;
                 font-size: 15px;
-                color: #E0E0E0;
+                color: palette(windowText);
                 margin-top: 10px;
                 padding-top: 8px;
             }
@@ -254,7 +254,7 @@ class ConfigDialog(QDialog):
             QGroupBox {
                 font-weight: bold;
                 font-size: 15px;
-                color: #E0E0E0;
+                color: palette(windowText);
                 margin-top: 10px;
                 padding-top: 8px;
             }
