@@ -4,12 +4,16 @@ from typing import List, Tuple, Optional
 from PIL import Image, ImageOps
 from PyQt6.QtGui import QPixmap, QImage
 from PyQt6.QtCore import Qt
+from pillow_heif import register_heif_opener
+
+# Register HEIF/HEIC support with Pillow
+register_heif_opener()
 
 
 def get_image_files(directory: str) -> List[str]:
     """Get all image files from a directory"""
     # Note: .gif might have issues with animations, only first frame will be shown
-    supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp', '.tiff', '.tif'}
+    supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp', '.tiff', '.tif', '.heic', '.heif'}
     image_files = []
     
     if os.path.exists(directory):
